@@ -1,0 +1,15 @@
+export const COLORS = {
+  bg: "#F3F5F7",
+  panel: "#FFFFFF",
+  panelEdge: "#E1E5EA",
+  navy: "#0F2A47",
+  navySoft: "#17385C",
+  red: "#C6303E",
+  redSoft: "#F6D9DC",
+  green: "#2F8F5B",
+  blue: "#2E6DA4",
+  amber: "#C97A1E",
+  text: "#1E2733",
+  textDim: "#68727E",
+  onNavyDim: "#9FB0C3",
+};
