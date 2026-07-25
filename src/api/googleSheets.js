@@ -24,3 +24,38 @@ export async function getDailyMeterReadings() {
     hourMeter: Number(row[meterCol]),
   }));
 }
+
+export async function getSummaryData() {
+  try {
+    // Get daily meter readings data
+    const meterData = await getDailyMeterReadings();
+    
+    if (!meterData || meterData.length === 0) {
+      return [];
+    }
+
+    // Create a map of unique sites with their info
+    const sitesMap = {};
+    meterData.forEach(item => {
+      if (item.site && !sitesMap[item.site]) {
+        // Determine status from site name
+        const isWorking = !/faulty/i.test(item.site);
+        sitesMap[item.site] = {
+          dgName: item.site,
+          status: isWorking ? "Working" : "Faulty",
+          engine: "Unknown",
+          alternator: "Unknown",
+          capacity: "Unknown",
+          engineer: "Unknown",
+        };
+      }
+    });
+
+    const result = Object.values(sitesMap);
+    console.log(`✓ getSummaryData loaded ${result.length} DG sites`);
+    return result;
+  } catch (error) {
+    console.error("✗ Error in getSummaryData:", error);
+    return [];
+  }
+}

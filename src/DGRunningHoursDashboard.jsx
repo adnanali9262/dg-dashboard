@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
-import { getDailyMeterReadings } from "./api/googleSheets";
+import { getDailyMeterReadings, getSummaryData } from "./api/googleSheets";
 
  import Card from "./components/Card";
 import { COLORS } from "./styles/colors";
@@ -75,59 +75,46 @@ function useDerived(parsed) {
   return useMemo(() => {
     if (!sheetData || sheetData.length === 0) return null;
 
-    const totalSites = new Set(
-      sheetData.map(item => item.site)
-    ).size;
+    // Total DGs (unique DG names)
+    const totalSites = sheetData.length;
 
-    const latestBySite = {};
-
-    sheetData.forEach(item => {
-      const existing = latestBySite[item.site];
-
-      if (!existing || new Date(item.date) > new Date(existing.date)) {
-        latestBySite[item.site] = item;
-      }
-    });
-
-    const latestReadings = Object.values(latestBySite);
-
-    const lifetimeHours = latestReadings.reduce(
-      (sum, item) => sum + (item.hourMeter || 0),
-      0
-    );
-
-    const today = new Date().toISOString().split("T")[0];
-
-    const todayHours = sheetData
-      .filter(item =>
-        item.date.startsWith(today)
-      )
-      .reduce(
-        (sum, item) => sum + (item.dailyHours || 0),
-        0
-      );
-
-    const monthlyHours = sheetData.reduce(
-      (sum, item) => sum + (item.dailyHours || 0),
-      0
-    );
-
-    const faultyDGs = sheetData.filter(item =>
-      /faulty/i.test(item.site)
+    // Count working vs faulty DGs based on status field
+    const workingDGs = sheetData.filter(item =>
+      /working/i.test(item.status || "")
+    ).length;
+    
+    const faultyDGCount = sheetData.filter(item =>
+      /faulty/i.test(item.status || "")
     ).length;
 
-    const totalFuelAvailable = latestReadings.reduce(
-      (sum, item) => sum + (item.fuelAvailable || 0),
-      0
-    );
+    // Summary by capacity
+    const capacityGroups = {};
+    sheetData.forEach(item => {
+      const capacity = item.capacity || "Unknown";
+      capacityGroups[capacity] = (capacityGroups[capacity] || 0) + 1;
+    });
+
+    // Engine manufacturer summary
+    const engineSummary = {};
+    sheetData.forEach(item => {
+      const engine = item.engine || "Unknown";
+      engineSummary[engine] = (engineSummary[engine] || 0) + 1;
+    });
+    
+    const topEngineManufacturer = Object.entries(engineSummary).sort((a, b) => b[1] - a[1])[0] || ["Unknown", 0];
 
     return {
       totalSites,
-      lifetimeHours: Math.round(lifetimeHours),
-      todayHours: Math.round(todayHours * 10) / 10,
-      monthlyHours: Math.round(monthlyHours * 10) / 10,
-      faultyDGs,
-      totalFuelAvailable: Math.round(totalFuelAvailable * 10) / 10
+      lifetimeHours: 0,
+      todayHours: 0,
+      monthlyHours: 0,
+      faultyDGs: faultyDGCount,
+      totalFuelAvailable: 0,
+      workingDGs,
+      faultyDGCount,
+      capacityGroups,
+      topEngineManufacturer: topEngineManufacturer[0],
+      topEngineCount: topEngineManufacturer[1]
     };
 
   }, [sheetData]);
@@ -234,7 +221,7 @@ function SummarySection({
   <StatCard 
     icon={Activity} 
     label="Total Run Hours Yesterday" 
-    value={sheetSummary ? sheetSummary.todayHours.toFixed(2) : "—"} 
+    value={meterDerived ? meterDerived.todayHours.toFixed(2) : "—"} 
     sub="Daily operation"
     tone="red" 
   />
@@ -242,7 +229,7 @@ function SummarySection({
   <StatCard 
     icon={Activity} 
     label="Total Run Hours This Month" 
-    value={sheetSummary ? sheetSummary.monthlyHours.toFixed(2) : "—"} 
+    value={meterDerived ? meterDerived.monthlyHours.toFixed(2) : "—"} 
     sub="Monthly total"
     tone="blue" 
   />
@@ -255,11 +242,31 @@ function SummarySection({
     tone="green" 
   />
 
+  <StatCard 
+    icon={Check} 
+    label="DG Sets Working" 
+    value={sheetSummary ? sheetSummary.workingDGs : "—"} 
+    tone="green" 
+  />
+
+  <StatCard 
+    icon={AlertTriangle} 
+    label="DG Sets Faulty" 
+    value={sheetSummary ? sheetSummary.faultyDGCount : "—"} 
+    tone="red" 
+  />
+
+  <StatCard 
+    icon={Wrench} 
+    label="Top Engine Manufacturer" 
+    value={sheetSummary ? sheetSummary.topEngineManufacturer : "—"} 
+    sub={sheetSummary ? `${sheetSummary.topEngineCount} units` : ""}
+    tone="blue" 
+  />
+
 </div>
  
-      {!parsed ? (
-        <NoReportState savedReports={savedReports} onLoad={onLoad} onGoUpload={onGoUpload} />
-      ) : (
+      {parsed && (
         <>
           <Card title="Fleet-wide daily running hours" desc={`${parsed.monthLabel} — sum of all reporting sites`}>
             <ResponsiveContainer width="100%" height={220}>
@@ -287,31 +294,6 @@ function SummarySection({
           </Card>
         </>
       )}
- 
-      <Card title="Recent repair activity" desc={repairsLoading ? "Loading…" : `${repairs.length} logged`} style={{ marginBottom: 0 }}>
-        {!repairsLoading && recentRepairs.length === 0 && (
-          <div style={{ padding: "16px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>No repairs logged yet.</div>
-        )}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 10 }}>
-          {recentRepairs.map((r) => (
-            <div key={r.id} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-              border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 12px",
-            }}>
-              <div style={{ minWidth: 0 }}>
-                <span style={{ fontWeight: 600, fontSize: 12.5 }}>{r.site}</span>
-                <span style={{ fontSize: 11, color: COLORS.textDim, marginLeft: 8, fontFamily: "'IBM Plex Mono', monospace" }}>{r.date}</span>
-              </div>
-              <span style={{
-                fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 12, color: "#fff", flexShrink: 0,
-                background: r.status === "Resolved" ? COLORS.green : r.status === "In Progress" ? COLORS.amber : COLORS.red,
-              }}>
-                {r.status}
-              </span>
-            </div>
-          ))}
-        </div>
-      </Card>
     </>
   );
 }
@@ -340,6 +322,7 @@ export default function DGRunningHoursDashboard() {
  
   const [parsed, setParsed] = useState(null);
   const [sheetData, setSheetData] = useState([]);
+  const [meterData, setMeterData] = useState([]);
   const [error, setError] = useState(null);
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -371,16 +354,30 @@ useEffect(() => {
     }
   });
 
-  // NEW - Load data from Google Sheets
+  // NEW - Load both meter data and summary data from Google Sheets
+  
+  // Load daily meter readings
   getDailyMeterReadings()
     .then((data) => {
       if (!cancelled) {
-        console.log("Google Sheets Data:", data);
+        console.log("✓ Google Sheets Meter Data loaded:", data?.length || 0, "rows");
+        setMeterData(data);
+      }
+    })
+    .catch((err) => {
+      console.error("✗ Failed to load meter data:", err);
+    });
+
+  // Load summary data
+  getSummaryData()
+    .then((data) => {
+      if (!cancelled) {
+        console.log("✓ Google Sheets Summary Data loaded:", data?.length || 0, "DGs");
         setSheetData(data);
       }
     })
     .catch((err) => {
-      console.error("Google Sheets Error:", err);
+      console.error("✗ Google Sheets Error:", err);
     });
 
   return () => {
@@ -392,27 +389,48 @@ useEffect(() => {
   const fuelDerived = useFuelDerived(parsed);
  const sheetSummary = useSheetSummary(sheetData);
  const meterDerived = useMemo(() => {
-  if (!sheetData || sheetData.length === 0) {
+  if (!meterData || meterData.length === 0) {
     return null;
   }
 
-  const totalRunHours = sheetData.reduce(
+  // Today's date and this month
+  const today = new Date();
+  const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const todayStr = today.toISOString().split("T")[0];
+  
+  // Calculate totals
+  const totalRunHours = meterData.reduce(
     (sum, item) => sum + Number(item.dailyHours || 0),
     0
   );
 
-  const totalMeterReading = sheetData.reduce(
+  const todayHours = meterData
+    .filter(item => item.date && item.date.includes(todayStr))
+    .reduce((sum, item) => sum + Number(item.dailyHours || 0), 0);
+
+  // This month's hours - simple approach: filter by month
+  const monthlyHours = meterData
+    .filter(item => {
+      if (!item.date) return false;
+      const itemDate = new Date(item.date);
+      return itemDate >= thisMonthStart && itemDate <= today;
+    })
+    .reduce((sum, item) => sum + Number(item.dailyHours || 0), 0);
+
+  const totalMeterReading = meterData.reduce(
     (sum, item) => sum + Number(item.hourMeter || 0),
     0
   );
 
   return {
     totalRunHours,
+    todayHours,
+    monthlyHours,
     totalMeterReading,
-    siteCount: sheetData.length
+    siteCount: new Set(meterData.map(m => m.site)).size
   };
 
-}, [sheetData]);
+}, [meterData]);
   const handleFile = useCallback((file) => {
     if (!file) return;
     setLoading(true);
