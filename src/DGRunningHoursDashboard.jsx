@@ -116,13 +116,18 @@ function useDerived(parsed) {
       /faulty/i.test(item.site)
     ).length;
 
+    const totalFuelAvailable = latestReadings.reduce(
+      (sum, item) => sum + (item.fuelAvailable || 0),
+      0
+    );
 
     return {
       totalSites,
       lifetimeHours: Math.round(lifetimeHours),
       todayHours: Math.round(todayHours * 10) / 10,
       monthlyHours: Math.round(monthlyHours * 10) / 10,
-      faultyDGs
+      faultyDGs,
+      totalFuelAvailable: Math.round(totalFuelAvailable * 10) / 10
     };
 
   }, [sheetData]);
@@ -221,40 +226,33 @@ function SummarySection({
 
   <StatCard 
     icon={Gauge} 
-    label="DG Sites Reporting" 
-    value={derived ? derived.activeCount : "—"} 
+    label="Total DGs" 
+    value={sheetSummary ? sheetSummary.totalSites : "—"} 
     tone="navy" 
   />
 
   <StatCard 
     icon={Activity} 
-    label="Today's Run Hours" 
-    value={meterDerived ? meterDerived.totalRunHours.toFixed(2) : "—"} 
-    sub="Daily DG operation"
+    label="Total Run Hours Yesterday" 
+    value={sheetSummary ? sheetSummary.todayHours.toFixed(2) : "—"} 
+    sub="Daily operation"
     tone="red" 
   />
 
   <StatCard 
-    icon={Gauge} 
-    label="Total Hour Meter" 
-    value={meterDerived ? meterDerived.totalMeterReading.toFixed(2) : "—"} 
-    sub="Fleet lifetime hours"
+    icon={Activity} 
+    label="Total Run Hours This Month" 
+    value={sheetSummary ? sheetSummary.monthlyHours.toFixed(2) : "—"} 
+    sub="Monthly total"
     tone="blue" 
   />
 
   <StatCard 
-    icon={ClipboardList} 
-    label="Open Repairs" 
-    value={repairsLoading ? "—" : openRepairs} 
-    sub={`${repairs.length} total`} 
+    icon={Fuel} 
+    label="Total Fuel Available" 
+    value={sheetSummary ? sheetSummary.totalFuelAvailable.toFixed(2) : "—"} 
+    sub="All DGs (Litres)"
     tone="green" 
-  />
-
-  <StatCard 
-    icon={FolderOpen} 
-    label="Saved Months" 
-    value={savedReports.length} 
-    tone="navy" 
   />
 
 </div>
