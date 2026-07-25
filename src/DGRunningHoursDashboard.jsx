@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
+import { getDailyMeterReadings } from "./api/googleSheets";
 
  import Card from "./components/Card";
 import { COLORS } from "./styles/colors";
@@ -70,7 +71,62 @@ function useDerived(parsed) {
     return { daily, totals, monthTotal, activeCount: active.length, faultyCount, siteNames: active.map((s) => s.name) };
   }, [parsed]);
 }
- 
+ function useSheetSummary(sheetData) {
+  return useMemo(() => {
+    if (!sheetData || sheetData.length === 0) return null;
+
+    const totalSites = new Set(
+      sheetData.map(item => item.site)
+    ).size;
+
+    const latestBySite = {};
+
+    sheetData.forEach(item => {
+      const existing = latestBySite[item.site];
+
+      if (!existing || new Date(item.date) > new Date(existing.date)) {
+        latestBySite[item.site] = item;
+      }
+    });
+
+    const latestReadings = Object.values(latestBySite);
+
+    const lifetimeHours = latestReadings.reduce(
+      (sum, item) => sum + (item.hourMeter || 0),
+      0
+    );
+
+    const today = new Date().toISOString().split("T")[0];
+
+    const todayHours = sheetData
+      .filter(item =>
+        item.date.startsWith(today)
+      )
+      .reduce(
+        (sum, item) => sum + (item.dailyHours || 0),
+        0
+      );
+
+    const monthlyHours = sheetData.reduce(
+      (sum, item) => sum + (item.dailyHours || 0),
+      0
+    );
+
+    const faultyDGs = sheetData.filter(item =>
+      /faulty/i.test(item.site)
+    ).length;
+
+
+    return {
+      totalSites,
+      lifetimeHours: Math.round(lifetimeHours),
+      todayHours: Math.round(todayHours * 10) / 10,
+      monthlyHours: Math.round(monthlyHours * 10) / 10,
+      faultyDGs
+    };
+
+  }, [sheetData]);
+}
 function useFuelDerived(parsed) {
   return useMemo(() => {
     if (!parsed) return null;
@@ -143,20 +199,65 @@ function Logo() {
 
 // --- Summary section -------------------------------------------------------
  
-function SummarySection({ parsed, derived, fuelDerived, repairs, repairsLoading, savedReports, onGoUpload, onLoad }) {
+function SummarySection({ 
+  parsed, 
+  derived, 
+  fuelDerived,
+  sheetSummary,
+  meterDerived,
+  repairs, 
+  repairsLoading, 
+  savedReports, 
+  onGoUpload, 
+  onLoad 
+}) {
   const openRepairs = repairs.filter((r) => r.status !== "Resolved").length;
   const recentRepairs = [...repairs].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 5);
   const topSites = derived ? derived.totals.slice(0, 5) : [];
  
   return (
     <>
-      <div style={{ display: "flex", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
-        <StatCard icon={Gauge} label="Sites reporting" value={derived ? derived.activeCount : "—"} tone="navy" />
-        <StatCard icon={Activity} label="Fleet run hours" value={derived ? derived.monthTotal : "—"} sub={parsed ? parsed.monthLabel : undefined} tone="red" />
-        <StatCard icon={Fuel} label="Fuel filled" value={fuelDerived ? `${fuelDerived.monthTotal} L` : "—"} sub={parsed ? parsed.monthLabel : undefined} tone="blue" />
-        <StatCard icon={ClipboardList} label="Open repairs" value={repairsLoading ? "—" : openRepairs} sub={`${repairs.length} total`} tone="green" />
-        <StatCard icon={FolderOpen} label="Saved months" value={savedReports.length} tone="navy" />
-      </div>
+<div style={{ display: "flex", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
+
+  <StatCard 
+    icon={Gauge} 
+    label="DG Sites Reporting" 
+    value={derived ? derived.activeCount : "—"} 
+    tone="navy" 
+  />
+
+  <StatCard 
+    icon={Activity} 
+    label="Today's Run Hours" 
+    value={meterDerived ? meterDerived.totalRunHours.toFixed(2) : "—"} 
+    sub="Daily DG operation"
+    tone="red" 
+  />
+
+  <StatCard 
+    icon={Gauge} 
+    label="Total Hour Meter" 
+    value={meterDerived ? meterDerived.totalMeterReading.toFixed(2) : "—"} 
+    sub="Fleet lifetime hours"
+    tone="blue" 
+  />
+
+  <StatCard 
+    icon={ClipboardList} 
+    label="Open Repairs" 
+    value={repairsLoading ? "—" : openRepairs} 
+    sub={`${repairs.length} total`} 
+    tone="green" 
+  />
+
+  <StatCard 
+    icon={FolderOpen} 
+    label="Saved Months" 
+    value={savedReports.length} 
+    tone="navy" 
+  />
+
+</div>
  
       {!parsed ? (
         <NoReportState savedReports={savedReports} onLoad={onLoad} onGoUpload={onGoUpload} />
@@ -240,6 +341,7 @@ export default function DGRunningHoursDashboard() {
   const [section, setSection] = useState("summary");
  
   const [parsed, setParsed] = useState(null);
+  const [sheetData, setSheetData] = useState([]);
   const [error, setError] = useState(null);
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -253,16 +355,66 @@ export default function DGRunningHoursDashboard() {
   const [repairs, setRepairs] = useState([]);
   const [repairsLoading, setRepairsLoading] = useState(true);
  
-  useEffect(() => {
-    let cancelled = false;
-    loadIndex().then((idx) => { if (!cancelled) { setSavedReports(idx); setSavedLoading(false); } });
-    loadRepairs().then((list) => { if (!cancelled) { setRepairs(list); setRepairsLoading(false); } });
-    return () => { cancelled = true; };
-  }, []);
+useEffect(() => {
+  let cancelled = false;
+
+  // Existing code
+  loadIndex().then((idx) => {
+    if (!cancelled) {
+      setSavedReports(idx);
+      setSavedLoading(false);
+    }
+  });
+
+  loadRepairs().then((list) => {
+    if (!cancelled) {
+      setRepairs(list);
+      setRepairsLoading(false);
+    }
+  });
+
+  // NEW - Load data from Google Sheets
+  getDailyMeterReadings()
+    .then((data) => {
+      if (!cancelled) {
+        console.log("Google Sheets Data:", data);
+        setSheetData(data);
+      }
+    })
+    .catch((err) => {
+      console.error("Google Sheets Error:", err);
+    });
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
  
   const derived = useDerived(parsed);
   const fuelDerived = useFuelDerived(parsed);
- 
+ const sheetSummary = useSheetSummary(sheetData);
+ const meterDerived = useMemo(() => {
+  if (!sheetData || sheetData.length === 0) {
+    return null;
+  }
+
+  const totalRunHours = sheetData.reduce(
+    (sum, item) => sum + Number(item.dailyHours || 0),
+    0
+  );
+
+  const totalMeterReading = sheetData.reduce(
+    (sum, item) => sum + Number(item.hourMeter || 0),
+    0
+  );
+
+  return {
+    totalRunHours,
+    totalMeterReading,
+    siteCount: sheetData.length
+  };
+
+}, [sheetData]);
   const handleFile = useCallback((file) => {
     if (!file) return;
     setLoading(true);
@@ -365,7 +517,11 @@ export default function DGRunningHoursDashboard() {
  
         {section === "summary" && (
           <SummarySection
-            parsed={parsed} derived={derived} fuelDerived={fuelDerived}
+  parsed={parsed}
+  derived={derived}
+  fuelDerived={fuelDerived}
+  sheetSummary={sheetSummary}
+  meterDerived={meterDerived}
             repairs={repairs} repairsLoading={repairsLoading}
             savedReports={savedReports} onGoUpload={() => setSection("upload")} onLoad={loadSavedReport}
           />
@@ -375,9 +531,28 @@ export default function DGRunningHoursDashboard() {
           derived ? (
             <>
               <div style={{ display: "flex", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
-                <StatCard icon={Gauge} label="Sites reporting" value={derived.activeCount} sub={derived.faultyCount ? `${derived.faultyCount} faulty excluded` : undefined} tone="navy" />
-                <StatCard icon={Activity} label="Fleet total run hours" value={derived.monthTotal} sub="this month" tone="red" />
-                <StatCard icon={Gauge} label="Days covered" value={parsed.days.length} sub="this month" tone="navy" />
+               <StatCard 
+ icon={Gauge} 
+ label="Sites reporting" 
+ value={meterDerived ? meterDerived.siteCount : "—"} 
+ tone="navy" 
+/>
+
+<StatCard 
+ icon={Activity} 
+ label="Daily Run Hours" 
+ value={meterDerived ? meterDerived.totalRunHours.toFixed(2) : "—"} 
+ tone="red" 
+/>
+
+<StatCard 
+ icon={ClipboardList} 
+ label="Total DG Hour Meter" 
+ value={meterDerived ? meterDerived.totalMeterReading.toFixed(2) : "—"} 
+ tone="green" 
+/>
+               
+                      <StatCard icon={Gauge} label="Days covered" value={parsed.days.length} sub="this month" tone="navy" />
               </div>
  
               <Card title="Fleet-wide daily running hours" desc="Sum of all reporting sites' daily meter-reading difference, per day of the month">
