@@ -30,11 +30,7 @@ function doPost(e) {
 function handleRequest(e) {
   try {
     const action = e.parameter.action || "getData";
-    const sheetName = e.parameter.sheet;
-    
-    if (!sheetName) {
-      return jsonResponse({ error: "Missing 'sheet' parameter" }, 400);
-    }
+    const sheetName = e.parameter.sheet || "Daily_Meter_Reading";
     
     switch (action) {
       case "getData":
@@ -156,7 +152,13 @@ function handleGetSheets() {
  * Get sheet by name
  */
 function getSheet(sheetName) {
-  return SPREADSHEET.getSheetByName(sheetName);
+  const exactMatch = SPREADSHEET.getSheetByName(sheetName);
+  if (exactMatch) return exactMatch;
+
+  const normalizedName = sheetName.toString().trim().toLowerCase();
+  return SPREADSHEET.getSheets().find((sheet) =>
+    sheet.getName().toString().trim().toLowerCase() === normalizedName
+  );
 }
 
 /**

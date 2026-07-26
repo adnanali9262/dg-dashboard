@@ -1,6 +1,5 @@
 import {
   Upload,
-  Fuel,
   Wrench,
   Activity,
   LayoutDashboard,
@@ -16,8 +15,7 @@ const COLORS = {
 
 const NAV_ITEMS = [
   { key: "summary", label: "Summary of DGs", icon: LayoutDashboard },
-  { key: "usage", label: "DG Usage", icon: Activity },
-  { key: "fuel", label: "DG Fuel Balance", icon: Fuel },
+  { key: "usage", label: "DG Usage and Fuel Balance", icon: Activity },
   { key: "repair", label: "DG Repair History", icon: Wrench },
   { key: "upload", label: "Upload Files", icon: Upload },
 ];

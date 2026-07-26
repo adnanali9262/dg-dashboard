@@ -1,17 +1,17 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList,
   ResponsiveContainer, ReferenceLine
 } from "recharts";
 import { parseWorkbook } from "./services/excelParser";
 import {
-  Upload, Gauge, Fuel, AlertTriangle, ChevronDown, FolderOpen, Trash2, Check,
-  Wrench, Activity, Plus, X, LayoutDashboard, Radio, ArrowRight, ClipboardList
+  Upload, Gauge, Fuel, AlertTriangle, Check,
+  Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
-import { getDailyMeterReadings, getSummaryData } from "./api/googleSheets";
+import { getDailyMeterReadings, getSummaryData, getFuelBalanceData } from "./api/googleSheets";
 
  import Card from "./components/Card";
 import { COLORS } from "./styles/colors";
@@ -33,8 +33,44 @@ import {
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');`;
  
  
-function isFaulty(name) {
-  return /faulty/i.test(name || "");
+function toLocalDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeSiteName(name) {
+  return String(name || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*\(\s*/g, " (")
+    .replace(/\s*\)\s*/g, ")")
+    .trim();
+}
+
+function siteMatchKey(name) {
+  return normalizeSiteName(name).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function round2(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function findSiteConsumption(fuelBalanceDerived, siteName) {
+  if (!fuelBalanceDerived) return 0;
+
+  const key = siteMatchKey(siteName);
+  if (fuelBalanceDerived.consumptionBySite.has(key)) {
+    return fuelBalanceDerived.consumptionBySite.get(key);
+  }
+
+  const match = fuelBalanceDerived.consumptionSites.find((site) => {
+    return key.includes(site.key) || site.key.includes(key);
+  });
+
+  return match ? match.perHourFuelConsumption : 0;
 }
  
 // --- Parsing -----------------------------------------------------------
@@ -145,6 +181,42 @@ function useFuelDerived(parsed) {
     return { daily, totals, monthTotal, siteNames: active.map((s) => s.name) };
   }, [parsed]);
 }
+
+// --- Derived series for the "Fuel Balance" Google Sheet --------------------
+function useFuelBalanceDerived(fuelBalanceData) {
+  return useMemo(() => {
+    if (!fuelBalanceData || fuelBalanceData.length === 0) return null;
+
+    const totals = fuelBalanceData
+      .map((row) => ({
+        name: normalizeSiteName(row.site || ""),
+        fuelBalance: Number(row.fuelBalance || 0),
+        perHourFuelConsumption: Number(row.perHourFuelConsumption || 0),
+      }))
+      .filter((s) => s.name)
+      .sort((a, b) => b.fuelBalance - a.fuelBalance);
+
+    const grandTotal = Math.round(totals.reduce((a, s) => a + s.fuelBalance, 0) * 100) / 100;
+    const consumptionBySite = new Map();
+    const consumptionSites = [];
+    totals.forEach((site) => {
+      const key = siteMatchKey(site.name);
+      if (key) {
+        consumptionBySite.set(key, site.perHourFuelConsumption);
+        consumptionSites.push({ key, name: site.name, perHourFuelConsumption: site.perHourFuelConsumption });
+      }
+    });
+
+    return {
+      totals,
+      grandTotal,
+      consumptionBySite,
+      consumptionSites,
+      siteCount: totals.length,
+      siteNames: totals.map((s) => s.name),
+    };
+  }, [fuelBalanceData]);
+}
  
 // --- Persistence (works inside claude.ai AND on a deployed Netlify site) --
 
@@ -163,15 +235,7 @@ function useFuelDerived(parsed) {
  
 // --- Sidebar -------------------------------------------------------------
  
-const NAV_ITEMS = [
-  { key: "summary", label: "Summary of DGs", icon: LayoutDashboard },
-  { key: "usage", label: "DG Usage", icon: Activity },
-  { key: "fuel", label: "DG Fuel Balance", icon: Fuel },
-  { key: "repair", label: "DG Repair History", icon: Wrench },
-  { key: "upload", label: "Upload Files", icon: Upload },
-];
- 
-function Logo() {
+function _Logo() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 6px", marginBottom: 26 }}>
       <div style={{
@@ -194,17 +258,10 @@ function Logo() {
 function SummarySection({ 
   parsed, 
   derived, 
-  fuelDerived,
   sheetSummary,
   meterDerived,
-  repairs, 
-  repairsLoading, 
-  savedReports, 
-  onGoUpload, 
-  onLoad 
+  fuelBalanceDerived
 }) {
-  const openRepairs = repairs.filter((r) => r.status !== "Resolved").length;
-  const recentRepairs = [...repairs].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 5);
   const topSites = derived ? derived.totals.slice(0, 5) : [];
  
   return (
@@ -220,9 +277,9 @@ function SummarySection({
 
   <StatCard 
     icon={Activity} 
-    label="Total Run Hours Yesterday" 
-    value={meterDerived ? meterDerived.todayHours.toFixed(2) : "—"} 
-    sub="Daily operation"
+    label="Latest Daily Run Hours" 
+    value={meterDerived ? meterDerived.latestDailyHours.toFixed(2) : "—"} 
+    sub={meterDerived?.latestDate ? meterDerived.latestDate.toLocaleDateString("en-PK") : "Daily operation"}
     tone="red" 
   />
 
@@ -237,7 +294,7 @@ function SummarySection({
   <StatCard 
     icon={Fuel} 
     label="Total Fuel Available" 
-    value={sheetSummary ? sheetSummary.totalFuelAvailable.toFixed(2) : "—"} 
+    value={fuelBalanceDerived ? fuelBalanceDerived.grandTotal.toFixed(2) : "—"} 
     sub="All DGs (Litres)"
     tone="green" 
   />
@@ -256,14 +313,6 @@ function SummarySection({
     tone="red" 
   />
 
-  <StatCard 
-    icon={Wrench} 
-    label="Top Engine Manufacturer" 
-    value={sheetSummary ? sheetSummary.topEngineManufacturer : "—"} 
-    sub={sheetSummary ? `${sheetSummary.topEngineCount} units` : ""}
-    tone="blue" 
-  />
-
 </div>
  
       {parsed && (
@@ -276,7 +325,9 @@ function SummarySection({
                 <YAxis tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={false} tickLine={false} width={40} />
                 <Tooltip content={<CustomTooltip unit="hrs" />} />
                 <ReferenceLine y={0} stroke={COLORS.panelEdge} />
-                <Line type="monotone" dataKey="totalHours" name="Total hrs" stroke={COLORS.red} strokeWidth={2.2} dot={{ r: 3, fill: COLORS.red, strokeWidth: 0 }} connectNulls />
+                <Line type="monotone" dataKey="totalHours" name="Total hrs" stroke={COLORS.red} strokeWidth={2.2} dot={{ r: 3, fill: COLORS.red, strokeWidth: 0 }} connectNulls>
+                  <LabelList dataKey="totalHours" position="top" formatter={(value) => value ?? ""} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                </Line>
               </LineChart>
             </ResponsiveContainer>
           </Card>
@@ -288,7 +339,9 @@ function SummarySection({
                 <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={200} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
                 <Tooltip content={<CustomTooltip unit="hrs" />} />
-                <Bar dataKey="total" name="Total hrs" fill={COLORS.navy} radius={[0, 4, 4, 0]} />
+                <Bar dataKey="total" name="Total hrs" fill={COLORS.navy} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                  <LabelList dataKey="total" position="right" formatter={(value) => `${value}h`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </Card>
@@ -298,19 +351,6 @@ function SummarySection({
   );
 }
  
-// --- Repair History section ------------------------------------------------
- 
-const REPAIR_STATUSES = ["Pending", "In Progress", "Resolved"];
-const STATUS_COLORS = { Pending: COLORS.red, "In Progress": COLORS.amber, Resolved: COLORS.green };
- 
-
- 
-const inputStyle = {
-  flex: 1, minWidth: 160, border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px",
-  fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12.5, background: COLORS.bg, color: COLORS.text,
-  boxSizing: "border-box",
-};
- 
 // --- Upload Files section ---------------------------------------------------
  
 
@@ -319,14 +359,19 @@ const inputStyle = {
  
 export default function DGRunningHoursDashboard() {
   const [section, setSection] = useState("summary");
+  const [now, setNow] = useState(() => new Date());
  
   const [parsed, setParsed] = useState(null);
   const [sheetData, setSheetData] = useState([]);
   const [meterData, setMeterData] = useState([]);
+  const [fuelBalanceData, setFuelBalanceData] = useState([]);
+  const [fuelBalanceLoading, setFuelBalanceLoading] = useState(true);
+  const [fuelBalanceError, setFuelBalanceError] = useState("");
   const [error, setError] = useState(null);
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedSite, setSelectedSite] = useState("");
+  const [selectedUsageDate, setSelectedUsageDate] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [savedReports, setSavedReports] = useState([]);
   const [savedLoading, setSavedLoading] = useState(true);
@@ -335,6 +380,11 @@ export default function DGRunningHoursDashboard() {
  
   const [repairs, setRepairs] = useState([]);
   const [repairsLoading, setRepairsLoading] = useState(true);
+
+useEffect(() => {
+  const timer = window.setInterval(() => setNow(new Date()), 1000);
+  return () => window.clearInterval(timer);
+}, []);
  
 useEffect(() => {
   let cancelled = false;
@@ -380,6 +430,23 @@ useEffect(() => {
       console.error("✗ Google Sheets Error:", err);
     });
 
+  // Load Fuel Balance data from the "Fuel Balance" sheet
+  getFuelBalanceData()
+    .then((data) => {
+      if (!cancelled) {
+        console.log("✓ Google Sheets Fuel Balance Data loaded:", data?.length || 0, "sites");
+        setFuelBalanceData(data);
+        setFuelBalanceLoading(false);
+      }
+    })
+    .catch((err) => {
+      console.error("✗ Failed to load fuel balance data:", err);
+      if (!cancelled) {
+        setFuelBalanceError(err.message || "Could not load fuel balance data.");
+        setFuelBalanceLoading(false);
+      }
+    });
+
   return () => {
     cancelled = true;
   };
@@ -387,16 +454,24 @@ useEffect(() => {
  
   const derived = useDerived(parsed);
   const fuelDerived = useFuelDerived(parsed);
+  const fuelBalanceDerived = useFuelBalanceDerived(fuelBalanceData);
  const sheetSummary = useSheetSummary(sheetData);
  const meterDerived = useMemo(() => {
   if (!meterData || meterData.length === 0) {
     return null;
   }
 
-  // Today's date and this month
   const today = new Date();
   const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const todayStr = today.toISOString().split("T")[0];
+  const datedMeterData = meterData
+    .map((item) => ({ ...item, parsedDate: item.date ? new Date(item.date) : null }))
+    .filter((item) => item.parsedDate && !Number.isNaN(item.parsedDate.getTime()));
+
+  const latestDate = datedMeterData.reduce((latest, item) => {
+    return !latest || item.parsedDate > latest ? item.parsedDate : latest;
+  }, null);
+
+  const latestDateStr = latestDate ? latestDate.toISOString().split("T")[0] : "";
   
   // Calculate totals
   const totalRunHours = meterData.reduce(
@@ -404,17 +479,13 @@ useEffect(() => {
     0
   );
 
-  const todayHours = meterData
-    .filter(item => item.date && item.date.includes(todayStr))
+  const latestDailyHours = datedMeterData
+    .filter(item => item.parsedDate.toISOString().split("T")[0] === latestDateStr)
     .reduce((sum, item) => sum + Number(item.dailyHours || 0), 0);
 
   // This month's hours - simple approach: filter by month
-  const monthlyHours = meterData
-    .filter(item => {
-      if (!item.date) return false;
-      const itemDate = new Date(item.date);
-      return itemDate >= thisMonthStart && itemDate <= today;
-    })
+  const monthlyHours = datedMeterData
+    .filter(item => item.parsedDate >= thisMonthStart && item.parsedDate <= today)
     .reduce((sum, item) => sum + Number(item.dailyHours || 0), 0);
 
   const totalMeterReading = meterData.reduce(
@@ -424,13 +495,79 @@ useEffect(() => {
 
   return {
     totalRunHours,
-    todayHours,
+    latestDailyHours,
+    latestDate,
     monthlyHours,
     totalMeterReading,
-    siteCount: new Set(meterData.map(m => m.site)).size
+    siteCount: new Set(meterData.map((m) => normalizeSiteName(m.site)).filter(Boolean)).size
   };
 
 }, [meterData]);
+  const usageDateOptions = useMemo(() => {
+    const dates = new Set();
+    meterData.forEach((item) => {
+      const key = toLocalDateKey(item.date);
+      if (key) dates.add(key);
+    });
+    return [...dates].sort((a, b) => b.localeCompare(a));
+  }, [meterData]);
+
+useEffect(() => {
+  if (!selectedUsageDate && usageDateOptions.length > 0) {
+    setSelectedUsageDate(usageDateOptions[0]);
+  }
+}, [selectedUsageDate, usageDateOptions]);
+
+  const selectedUsageData = useMemo(() => {
+    if (!selectedUsageDate) return [];
+
+    const usageBySite = new Map();
+
+    meterData
+      .filter((item) => toLocalDateKey(item.date) === selectedUsageDate)
+      .forEach((item) => {
+        const name = normalizeSiteName(item.site);
+        if (!name) return;
+
+        const previous = usageBySite.get(name) || { name, hours: 0, hourMeter: 0 };
+        usageBySite.set(name, {
+          name,
+          hours: previous.hours + Number(item.dailyHours || 0),
+          hourMeter: Number(item.hourMeter || previous.hourMeter || 0),
+        });
+      });
+
+    return [...usageBySite.values()]
+      .map((item) => {
+        const perHourFuelConsumption = findSiteConsumption(fuelBalanceDerived, item.name);
+        const hours = round2(item.hours);
+        return {
+          ...item,
+          hours,
+          perHourFuelConsumption,
+          fuelConsumed: round2(hours * perHourFuelConsumption),
+        };
+      })
+      .filter((item) => item.hours > 0)
+      .sort((a, b) => (b.hours - a.hours) || a.name.localeCompare(b.name));
+  }, [fuelBalanceDerived, meterData, selectedUsageDate]);
+
+  const selectedUsageTotal = useMemo(() => {
+    return Math.round(selectedUsageData.reduce((sum, item) => sum + item.hours, 0) * 100) / 100;
+  }, [selectedUsageData]);
+
+  const selectedFuelConsumedTotal = useMemo(() => {
+    return round2(selectedUsageData.reduce((sum, item) => sum + item.fuelConsumed, 0));
+  }, [selectedUsageData]);
+
+  const selectedUsageLabel = selectedUsageDate
+    ? new Date(`${selectedUsageDate}T00:00:00`).toLocaleDateString("en-PK", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "";
+
   const handleFile = useCallback((file) => {
     if (!file) return;
     setLoading(true);
@@ -509,13 +646,24 @@ useEffect(() => {
   }, [parsed, selectedSite]);
  
   const sectionMeta = {
-    summary: { title: "Summary of DGs", desc: "Fleet-wide snapshot across usage, fuel and repairs", icon: LayoutDashboard },
-    usage: { title: "DG Usage — Daily Meter Readings", desc: "Daily generator running hours per site", icon: Activity },
-    fuel: { title: "DG Fuel Balance", desc: "Fuel (POL) topped up per site", icon: Fuel },
+    summary: { title: "Summary of DGs", desc: "", icon: LayoutDashboard },
+    usage: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Activity },
+    fuel: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Fuel },
     repair: { title: "DG Repair History", desc: "Log and track generator repairs, spares used, and status", icon: Wrench },
     upload: { title: "Upload Files", desc: "Add a monthly meter-reading sheet, or manage what's saved", icon: Upload },
   }[section];
   const HeaderIcon = sectionMeta.icon;
+  const currentDate = now.toLocaleDateString("en-PK", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const currentTime = now.toLocaleTimeString("en-PK", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
  
   return (
     <div style={{ display: "flex", minHeight: "100%", background: COLORS.bg, fontFamily: "'IBM Plex Sans', sans-serif" }}>
@@ -523,9 +671,15 @@ useEffect(() => {
       <Sidebar active={section} onSelect={setSection} />
  
       <div style={{ flex: 1, minWidth: 0, color: COLORS.text, padding: "22px 24px 40px", boxSizing: "border-box" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-          <HeaderIcon size={20} color={COLORS.red} />
-          <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: 0.2, color: COLORS.navy }}>{sectionMeta.title}</h1>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <HeaderIcon size={20} color={COLORS.red} />
+            <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: 0.2, color: COLORS.navy }}>{sectionMeta.title}</h1>
+          </div>
+          <div style={{ textAlign: "right", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: COLORS.textDim, whiteSpace: "nowrap", lineHeight: 1.45 }}>
+            <div>{currentDate}</div>
+            <div style={{ color: COLORS.navy, fontWeight: 600 }}>{currentTime}</div>
+          </div>
         </div>
         <div style={{ fontSize: 12.5, color: COLORS.textDim, marginBottom: 20, marginLeft: 30 }}>
           {(section === "usage" || section === "fuel") && parsed ? (parsed.title || "Parsed report") : sectionMeta.desc}
@@ -533,17 +687,117 @@ useEffect(() => {
  
         {section === "summary" && (
           <SummarySection
-  parsed={parsed}
-  derived={derived}
-  fuelDerived={fuelDerived}
-  sheetSummary={sheetSummary}
-  meterDerived={meterDerived}
-            repairs={repairs} repairsLoading={repairsLoading}
-            savedReports={savedReports} onGoUpload={() => setSection("upload")} onLoad={loadSavedReport}
+            parsed={parsed}
+            derived={derived}
+            sheetSummary={sheetSummary}
+            meterDerived={meterDerived}
+            fuelBalanceDerived={fuelBalanceDerived}
           />
         )}
  
         {section === "usage" && (
+          <>
+            <div style={{ display: "flex", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
+              <StatCard icon={Gauge} label="Sites reporting" value={meterDerived ? meterDerived.siteCount : "—"} tone="navy" />
+              <StatCard icon={Activity} label="Selected date run hours" value={selectedUsageTotal.toFixed(2)} sub={selectedUsageLabel || "No date selected"} tone="red" />
+              <StatCard icon={Fuel} label="Estimated fuel consumed" value={selectedFuelConsumedTotal.toFixed(2)} sub="Litres" tone="blue" />
+              <StatCard icon={ClipboardList} label="DGs used on selected date" value={selectedUsageData.length} sub="" tone="green" />
+              <StatCard icon={CalendarDays} label="Data available for days" value={usageDateOptions.length} tone="blue" />
+            </div>
+
+            <Card
+              title="DG usage by site"
+              desc="Sorted from highest usage to lowest for the selected date"
+              style={{ marginBottom: 0 }}
+              right={
+                <select
+                  value={selectedUsageDate}
+                  onChange={(event) => setSelectedUsageDate(event.target.value)}
+                  style={{
+                    border: `1px solid ${COLORS.panelEdge}`,
+                    borderRadius: 8,
+                    padding: "7px 10px",
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 12,
+                    color: COLORS.text,
+                    background: COLORS.bg,
+                    minWidth: 150,
+                  }}
+                >
+                  {usageDateOptions.map((date) => (
+                    <option key={date} value={date}>
+                      {new Date(`${date}T00:00:00`).toLocaleDateString("en-PK", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </option>
+                  ))}
+                </select>
+              }
+            >
+              {usageDateOptions.length === 0 ? (
+                <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                  Meter reading data is loading.
+                </div>
+              ) : selectedUsageData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={Math.max(300, selectedUsageData.length * 36)}>
+                  <BarChart data={selectedUsageData} layout="vertical" margin={{ top: 8, right: 56, left: 10, bottom: 0 }}>
+                    <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
+                    <YAxis type="category" dataKey="name" width={280} interval={0} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="hours" name="Run hours" fill={COLORS.red} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                      <LabelList dataKey="hours" position="right" formatter={(value) => `${value}h`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                    </Bar>
+                    <Bar dataKey="fuelConsumed" name="Fuel consumed" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                      <LabelList dataKey="fuelConsumed" position="right" formatter={(value) => `${value}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                  No DG usage above zero for this date.
+                </div>
+              )}
+            </Card>
+
+            {/* Fuel Balance chart — sourced from the "Fuel Balance" Google Sheet */}
+            <Card
+              title="Fuel Balance by site"
+              desc="Current fuel balance (litres) for all 32 sites, sorted highest to lowest"
+              style={{ marginTop: 0 }}
+            >
+              {fuelBalanceLoading ? (
+                <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                  Fuel balance data is loading from the Google Sheet.
+                </div>
+              ) : fuelBalanceError ? (
+                <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                  {fuelBalanceError}
+                </div>
+              ) : fuelBalanceDerived && fuelBalanceDerived.totals.length > 0 ? (
+                <ResponsiveContainer width="100%" height={Math.max(320, fuelBalanceDerived.totals.length * 30)}>
+                  <BarChart data={fuelBalanceDerived.totals} layout="vertical" margin={{ top: 8, right: 56, left: 10, bottom: 0 }}>
+                    <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
+                    <YAxis type="category" dataKey="name" width={280} interval={0} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip unit="L" />} />
+                    <Bar dataKey="fuelBalance" name="Fuel balance" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                      <LabelList dataKey="fuelBalance" position="right" formatter={(value) => `${value}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                  No Fuel Balance sheet data found. The deployed Apps Script is currently returning Daily Meter Reading rows for this request.
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
+        {section === "__legacy_usage" && (
           derived ? (
             <>
               <div style={{ display: "flex", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>

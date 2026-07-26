@@ -1,3 +1,4 @@
+import { AlertTriangle, Check, Trash2, Upload } from "lucide-react";
 import Card from "./Card";
 import { COLORS } from "../styles/colors";
 

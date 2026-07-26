@@ -117,6 +117,13 @@ export function useFuelFilling(autoLoad = true) {
 }
 
 /**
+ * Hook for Fuel Balance sheet
+ */
+export function useFuelBalance(autoLoad = true) {
+  return useSheetData("Fuel Balance", autoLoad);
+}
+
+/**
  * Hook for Repairs sheet
  */
 export function useRepairs(autoLoad = true) {

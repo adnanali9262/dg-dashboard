@@ -1,4 +1,6 @@
- 
+import { ChevronDown } from "lucide-react";
+import { COLORS } from "../styles/colors";
+
 export default function SiteSelect({ value, onChange, siteNames }) {
   return (
     <div style={{ position: "relative" }}>

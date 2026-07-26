@@ -1,6 +1,23 @@
 import { useState } from "react";
+import { Plus, Trash2, X } from "lucide-react";
 import Card from "./Card";
 import { COLORS } from "../styles/colors";
+
+const REPAIR_STATUSES = ["Pending", "In Progress", "Resolved"];
+const STATUS_COLORS = { Pending: COLORS.red, "In Progress": COLORS.amber, Resolved: COLORS.green };
+
+const inputStyle = {
+  flex: 1,
+  minWidth: 160,
+  border: `1px solid ${COLORS.panelEdge}`,
+  borderRadius: 8,
+  padding: "8px 10px",
+  fontFamily: "'IBM Plex Sans', sans-serif",
+  fontSize: 12.5,
+  background: COLORS.bg,
+  color: COLORS.text,
+  boxSizing: "border-box",
+};
 
 export default function RepairHistorySection({ repairs, loading, siteNames, onAdd, onDelete }) {
   const [showForm, setShowForm] = useState(false);

@@ -1,3 +1,5 @@
+import { COLORS } from "../styles/colors";
+
 export default function CustomTooltip({ active, payload, label, unit = "hrs" }) {
   if (!active || !payload || !payload.length) return null;
   return (
