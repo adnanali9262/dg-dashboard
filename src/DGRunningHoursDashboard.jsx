@@ -266,7 +266,7 @@ function SummarySection({
  
   return (
     <>
-<div style={{ display: "flex", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
+<div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
 
   <StatCard 
     icon={Gauge} 
@@ -316,7 +316,7 @@ function SummarySection({
 </div>
  
       {parsed && (
-        <>
+        <div className="dashboard-chart-grid">
           <Card title="Fleet-wide daily running hours" desc={`${parsed.monthLabel} — sum of all reporting sites`}>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={derived.daily} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
@@ -345,7 +345,7 @@ function SummarySection({
               </BarChart>
             </ResponsiveContainer>
           </Card>
-        </>
+        </div>
       )}
     </>
   );
@@ -666,22 +666,48 @@ useEffect(() => {
   });
  
   return (
-    <div style={{ display: "flex", minHeight: "100%", background: COLORS.bg, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: "transparent", fontFamily: "'IBM Plex Sans', sans-serif" }}>
       <style>{FONT_IMPORT}</style>
       <Sidebar active={section} onSelect={setSection} />
  
-      <div style={{ flex: 1, minWidth: 0, color: COLORS.text, padding: "22px 24px 40px", boxSizing: "border-box" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <HeaderIcon size={20} color={COLORS.red} />
-            <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: 0.2, color: COLORS.navy }}>{sectionMeta.title}</h1>
+      <main style={{ flex: 1, minWidth: 0, color: COLORS.text, padding: "28px 32px 44px", boxSizing: "border-box" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <div style={{
+              width: 38,
+              height: 38,
+              borderRadius: 9,
+              background: COLORS.panel,
+              border: `1px solid ${COLORS.panelEdge}`,
+              boxShadow: COLORS.shadowSoft,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}>
+              <HeaderIcon size={20} color={COLORS.red} />
+            </div>
+            <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: 0, color: COLORS.navy, lineHeight: 1.15 }}>{sectionMeta.title}</h1>
           </div>
-          <div style={{ textAlign: "right", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: COLORS.textDim, whiteSpace: "nowrap", lineHeight: 1.45 }}>
+          <div style={{
+            textAlign: "right",
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: 12,
+            color: COLORS.textDim,
+            whiteSpace: "nowrap",
+            lineHeight: 1.45,
+            background: COLORS.panel,
+            border: `1px solid ${COLORS.panelEdge}`,
+            borderRadius: 8,
+            padding: "8px 11px",
+            boxShadow: COLORS.shadowSoft,
+          }}>
             <div>{currentDate}</div>
             <div style={{ color: COLORS.navy, fontWeight: 600 }}>{currentTime}</div>
           </div>
         </div>
-        <div style={{ fontSize: 12.5, color: COLORS.textDim, marginBottom: 20, marginLeft: 30 }}>
+        <div style={{ fontSize: 13, color: COLORS.textDim, marginBottom: 22, marginLeft: 50, maxWidth: 680, lineHeight: 1.35 }}>
           {(section === "usage" || section === "fuel") && parsed ? (parsed.title || "Parsed report") : sectionMeta.desc}
         </div>
  
@@ -697,7 +723,7 @@ useEffect(() => {
  
         {section === "usage" && (
           <>
-            <div style={{ display: "flex", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
               <StatCard icon={Gauge} label="Sites reporting" value={meterDerived ? meterDerived.siteCount : "—"} tone="navy" />
               <StatCard icon={Activity} label="Selected date run hours" value={selectedUsageTotal.toFixed(2)} sub={selectedUsageLabel || "No date selected"} tone="red" />
               <StatCard icon={Fuel} label="Estimated fuel consumed" value={selectedFuelConsumedTotal.toFixed(2)} sub="Litres" tone="blue" />
@@ -708,7 +734,7 @@ useEffect(() => {
             <Card
               title="DG usage by site"
               desc="Sorted from highest usage to lowest for the selected date"
-              style={{ marginBottom: 0 }}
+              style={{ marginBottom: 18 }}
               right={
                 <select
                   value={selectedUsageDate}
@@ -716,12 +742,13 @@ useEffect(() => {
                   style={{
                     border: `1px solid ${COLORS.panelEdge}`,
                     borderRadius: 8,
-                    padding: "7px 10px",
+                    padding: "8px 11px",
                     fontFamily: "'IBM Plex Mono', monospace",
                     fontSize: 12,
                     color: COLORS.text,
-                    background: COLORS.bg,
+                    background: COLORS.panelSoft,
                     minWidth: 150,
+                    boxShadow: "0 1px 0 rgba(16,36,62,0.03)",
                   }}
                 >
                   {usageDateOptions.map((date) => (
@@ -766,7 +793,7 @@ useEffect(() => {
             <Card
               title="Fuel Balance by site"
               desc="Current fuel balance (litres) for all 32 sites, sorted highest to lowest"
-              style={{ marginTop: 0 }}
+              style={{ marginTop: 0, marginBottom: 0 }}
             >
               {fuelBalanceLoading ? (
                 <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
@@ -800,7 +827,7 @@ useEffect(() => {
         {section === "__legacy_usage" && (
           derived ? (
             <>
-              <div style={{ display: "flex", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
                <StatCard 
  icon={Gauge} 
  label="Sites reporting" 
@@ -879,7 +906,7 @@ useEffect(() => {
         {section === "fuel" && (
           fuelDerived ? (
             <>
-              <div style={{ display: "flex", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
                 <StatCard icon={Fuel} label="Sites with fuel entries" value={fuelDerived.totals.length} tone="blue" />
                 <StatCard icon={Fuel} label="Fleet total fuel filled" value={`${fuelDerived.monthTotal} L`} sub="this month" tone="blue" />
                 <StatCard icon={Gauge} label="Days covered" value={parsed.days.length} sub="this month" tone="navy" />
@@ -962,7 +989,8 @@ useEffect(() => {
             loadSavedReport={loadSavedReport} removeSavedReport={removeSavedReport} error={error}
           />
         )}
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

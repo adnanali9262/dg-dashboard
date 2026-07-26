@@ -6,10 +6,10 @@ export default function Card({ children, style, title, desc, right }) {
       style={{
         background: COLORS.panel,
         border: `1px solid ${COLORS.panelEdge}`,
-        borderRadius: 12,
-        boxShadow: "0 1px 3px rgba(15,42,71,0.05)",
-        padding: "18px 18px 8px",
-        marginBottom: 22,
+        borderRadius: 10,
+        boxShadow: COLORS.shadowSoft,
+        padding: "20px 20px 12px",
+        marginBottom: 18,
         ...style,
       }}
     >
@@ -20,8 +20,8 @@ export default function Card({ children, style, title, desc, right }) {
             display:"flex",
             alignItems:"flex-start",
             justifyContent:"space-between",
-            marginBottom: desc ? 2 : 10,
-            gap:10,
+            marginBottom: desc ? 14 : 16,
+            gap:14,
             flexWrap:"wrap"
           }}
         >
@@ -30,9 +30,10 @@ export default function Card({ children, style, title, desc, right }) {
             {title && (
               <div
                 style={{
-                  fontSize:13,
-                  fontWeight:600,
-                  color:COLORS.navy
+                  fontSize:14,
+                  fontWeight:700,
+                  color:COLORS.navy,
+                  lineHeight:1.25
                 }}
               >
                 {title}
@@ -42,9 +43,10 @@ export default function Card({ children, style, title, desc, right }) {
             {desc && (
               <div
                 style={{
-                  fontSize:11.5,
+                  fontSize:12,
                   color:COLORS.textDim,
-                  marginTop:2
+                  marginTop:4,
+                  lineHeight:1.35
                 }}
               >
                 {desc}
@@ -61,7 +63,7 @@ export default function Card({ children, style, title, desc, right }) {
       {!title && !right && desc && (
         <div
           style={{
-            fontSize:11.5,
+            fontSize:12,
             color:COLORS.textDim,
             marginBottom:10
           }}
