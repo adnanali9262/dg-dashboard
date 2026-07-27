@@ -2,11 +2,11 @@ import {
   Wrench,
   Activity,
   LayoutDashboard,
-  Link2,
   ClipboardCheck,
   Zap,
   Droplets,
   FileSpreadsheet,
+  Mail,
 } from "lucide-react";
 import { COLORS } from "../styles/colors";
 import ptclLogo from "../assets/ptcl-logo.png";
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { key: "fuelperf", label: "Fuel Performance", icon: Droplets },
   { key: "repair", label: "DG Repair History", icon: Wrench },
   { key: "sheets", label: "Google Sheets", icon: FileSpreadsheet },
+  { key: "contact", label: "Contact", icon: Mail },
 ];
 
 function Logo() {

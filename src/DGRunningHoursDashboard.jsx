@@ -8,7 +8,7 @@ import { parseWorkbook } from "./services/excelParser";
 import {
   Gauge, Fuel, AlertTriangle, Check,
   Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays, Link2,
-  ClipboardCheck, Zap, Droplets, FileSpreadsheet
+  ClipboardCheck, Zap, Droplets, FileSpreadsheet, Mail, UserRound
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
@@ -654,6 +654,7 @@ useEffect(() => {
     fuel: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Fuel },
     repair: { title: "DG Repair History", desc: "Log and track generator repairs, spares used, and status", icon: Wrench },
     sheets: { title: "Google Sheets", desc: "Open the live workbook directly", icon: FileSpreadsheet },
+    contact: { title: "Contact", desc: "Feedback and developer details", icon: Mail },
   }[section];
   const HeaderIcon = sectionMeta.icon;
   const currentDate = now.toLocaleDateString("en-PK", {
@@ -1016,6 +1017,25 @@ useEffect(() => {
                 <Link2 size={15} />
                 Open Google Sheets
               </a>
+            </div>
+          </Card>
+        )}
+
+        {section === "contact" && (
+          <Card title="Contact" desc="Feedback and contact">
+            <div style={{ display: "grid", gap: 12, maxWidth: 720 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, color: COLORS.text, fontWeight: 700 }}>
+                <UserRound size={16} color={COLORS.blue} />
+                Developer: Engr. Adnan Rafiq
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, color: COLORS.text, fontWeight: 600 }}>
+                <Mail size={16} color={COLORS.red} />
+                Email: <a href="mailto:adnan.rafiq173@gmail.com" style={{ color: COLORS.blue, textDecoration: "none" }}>adnan.rafiq173@gmail.com</a>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, color: COLORS.text, fontWeight: 600 }}>
+                <Link2 size={16} color={COLORS.navy} />
+                GitHub: <a href="https://github.com/adnanali9262" target="_blank" rel="noreferrer" style={{ color: COLORS.blue, textDecoration: "none" }}>github.com/adnanali9262</a>
+              </div>
             </div>
           </Card>
         )}
