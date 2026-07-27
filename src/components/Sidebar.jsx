@@ -2,13 +2,23 @@ import {
   Wrench,
   Activity,
   LayoutDashboard,
+  Link2,
+  ClipboardCheck,
+  Zap,
+  Droplets,
+  FileSpreadsheet,
 } from "lucide-react";
 import { COLORS } from "../styles/colors";
+import ptclLogo from "../assets/ptcl-logo.png";
 
 const NAV_ITEMS = [
   { key: "summary", label: "Summary of DGs", icon: LayoutDashboard },
   { key: "usage", label: "DG Usage and Fuel Balance", icon: Activity },
+  { key: "pmr", label: "PMR Tracking", icon: ClipboardCheck },
+  { key: "electricity", label: "Electricity Performance", icon: Zap },
+  { key: "fuelperf", label: "Fuel Performance", icon: Droplets },
   { key: "repair", label: "DG Repair History", icon: Wrench },
+  { key: "sheets", label: "Google Sheets", icon: FileSpreadsheet },
 ];
 
 function Logo() {
@@ -18,22 +28,36 @@ function Logo() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "6px 4px 22px",
+        padding: "4px 4px 20px",
         marginBottom: 14,
         borderBottom: `1px solid ${COLORS.panelEdge}`,
       }}
     >
-      <img
-        src="/ptcl-logo.png"
-        alt="PTCL"
-        style={{
-          display: "block",
-          width: "100%",
-          maxWidth: 178,
-          height: "auto",
-          objectFit: "contain",
-        }}
-      />
+      <div style={{ width: "100%", maxWidth: 190 }}>
+        <img
+          src={ptclLogo}
+          alt="CO/FO Field Operations Dashboard"
+          style={{
+            display: "block",
+            width: "100%",
+            height: 58,
+            objectFit: "contain",
+          }}
+        />
+        <div
+          style={{
+            marginTop: 8,
+            color: COLORS.navy,
+            fontSize: 14,
+            fontWeight: 800,
+            lineHeight: 1.2,
+            letterSpacing: 0,
+            textAlign: "center",
+          }}
+        >
+          CO/FO Bahawalpur Rural
+        </div>
+      </div>
     </div>
   );
 }

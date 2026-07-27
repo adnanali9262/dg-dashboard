@@ -1,13 +1,13 @@
 import Card from "./Card";
 import { COLORS } from "../styles/colors";
-import { Upload, ArrowRight } from "lucide-react";
-export default function NoReportState({ savedReports, onLoad, onGoUpload }) {
+import { Link2, ArrowRight } from "lucide-react";
+export default function NoReportState({ savedReports, onLoad, onGoSheets }) {
   return (
     <Card style={{ marginBottom: 0 }}>
       <div style={{ padding: "18px 4px", textAlign: "center" }}>
         <div style={{ fontSize: 13.5, fontWeight: 600, color: COLORS.navy, marginBottom: 4 }}>No report loaded</div>
         <div style={{ fontSize: 12.5, color: COLORS.textDim, marginBottom: 16 }}>
-          Upload a monthly meter-reading sheet, or pick a previously saved month below.
+          Open the live workbook in Google Sheets, or pick a previously saved month below.
         </div>
         {savedReports.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 }}>
@@ -26,13 +26,13 @@ export default function NoReportState({ savedReports, onLoad, onGoUpload }) {
           </div>
         )}
         <button
-          onClick={onGoUpload}
+          onClick={onGoSheets}
           style={{
             display: "inline-flex", alignItems: "center", gap: 6, border: "none", cursor: "pointer",
             background: COLORS.red, color: "#fff", borderRadius: 8, padding: "9px 16px", fontSize: 12.5, fontWeight: 600,
           }}
         >
-          <Upload size={14} /> Go to Upload Files <ArrowRight size={13} />
+          <Link2 size={14} /> Open Google Sheets <ArrowRight size={13} />
         </button>
       </div>
     </Card>

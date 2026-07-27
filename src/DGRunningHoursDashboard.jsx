@@ -1,13 +1,14 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList,
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Legend,
   ResponsiveContainer, ReferenceLine
 } from "recharts";
 import { parseWorkbook } from "./services/excelParser";
 import {
-  Upload, Gauge, Fuel, AlertTriangle, Check,
-  Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays
+  Gauge, Fuel, AlertTriangle, Check,
+  Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays, Link2,
+  ClipboardCheck, Zap, Droplets, FileSpreadsheet
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
@@ -19,7 +20,6 @@ import { COLORS } from "./styles/colors";
 import SiteSelect from "./components/SiteSelect";
 import NoReportState from "./components/NoReportState";
 import RepairHistorySection from "./components/RepairHistorySection";
-import UploadSection from "./components/UploadSection";
 import {
   storage,
   loadIndex,
@@ -367,16 +367,16 @@ export default function DGRunningHoursDashboard() {
   const [fuelBalanceData, setFuelBalanceData] = useState([]);
   const [fuelBalanceLoading, setFuelBalanceLoading] = useState(true);
   const [fuelBalanceError, setFuelBalanceError] = useState("");
-  const [error, setError] = useState(null);
-  const [fileName, setFileName] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [_error, _setError] = useState(null);
+  const [_fileName, _setFileName] = useState("");
+  const [_loading, _setLoading] = useState(false);
   const [selectedSite, setSelectedSite] = useState("");
   const [selectedUsageDate, setSelectedUsageDate] = useState("");
-  const [dragOver, setDragOver] = useState(false);
+  const [_dragOver, _setDragOver] = useState(false);
   const [savedReports, setSavedReports] = useState([]);
-  const [savedLoading, setSavedLoading] = useState(true);
-  const [saveStatus, setSaveStatus] = useState("");
-  const inputRef = useRef(null);
+  const [_savedLoading, _setSavedLoading] = useState(true);
+  const [_saveStatus, _setSaveStatus] = useState("");
+  const _inputRef = useRef(null);
  
   const [repairs, setRepairs] = useState([]);
   const [repairsLoading, setRepairsLoading] = useState(true);
@@ -648,9 +648,12 @@ useEffect(() => {
   const sectionMeta = {
     summary: { title: "Summary of DGs", desc: "", icon: LayoutDashboard },
     usage: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Activity },
+    pmr: { title: "PMR Tracking", desc: "Section coming soon", icon: ClipboardCheck },
+    electricity: { title: "Electricity Performance", desc: "Section coming soon", icon: Zap },
+    fuelperf: { title: "Fuel Performance", desc: "Section coming soon", icon: Droplets },
     fuel: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Fuel },
     repair: { title: "DG Repair History", desc: "Log and track generator repairs, spares used, and status", icon: Wrench },
-    upload: { title: "Upload Files", desc: "Add a monthly meter-reading sheet, or manage what's saved", icon: Upload },
+    sheets: { title: "Google Sheets", desc: "Open the live workbook directly", icon: FileSpreadsheet },
   }[section];
   const HeaderIcon = sectionMeta.icon;
   const currentDate = now.toLocaleDateString("en-PK", {
@@ -768,16 +771,20 @@ useEffect(() => {
                   Meter reading data is loading.
                 </div>
               ) : selectedUsageData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={Math.max(300, selectedUsageData.length * 36)}>
-                  <BarChart data={selectedUsageData} layout="vertical" margin={{ top: 8, right: 56, left: 10, bottom: 0 }}>
+                    <ResponsiveContainer width="100%" height={Math.max(300, selectedUsageData.length * 36)}>
+                  <BarChart data={selectedUsageData} layout="vertical" barCategoryGap={10} barGap={4} margin={{ top: 8, right: 56, left: 10, bottom: 0 }}>
                     <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
                     <YAxis type="category" dataKey="name" width={280} interval={0} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
+                    <Legend verticalAlign="top" align="left" iconType="circle" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "'IBM Plex Sans', sans-serif" }} />
                     <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="hours" name="Run hours" fill={COLORS.red} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                    <Bar dataKey="hours" name="Run hours" fill={COLORS.red} radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={18}>
                       <LabelList dataKey="hours" position="right" formatter={(value) => `${value}h`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
                     </Bar>
-                    <Bar dataKey="fuelConsumed" name="Fuel consumed" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                    <Bar dataKey="perHourFuelConsumption" name="Fuel consumption" fill={COLORS.amber} radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={18}>
+                      <LabelList dataKey="perHourFuelConsumption" position="right" formatter={(value) => `${value}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                    </Bar>
+                    <Bar dataKey="fuelConsumed" name="Fuel consumed" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={18}>
                       <LabelList dataKey="fuelConsumed" position="right" formatter={(value) => `${value}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
                     </Bar>
                   </BarChart>
@@ -899,7 +906,7 @@ useEffect(() => {
               </Card>
             </>
           ) : (
-            <NoReportState savedReports={savedReports} onLoad={loadSavedReport} onGoUpload={() => setSection("upload")} />
+            <NoReportState savedReports={savedReports} onLoad={loadSavedReport} onGoSheets={() => setSection("sheets")} />
           )
         )}
  
@@ -967,7 +974,7 @@ useEffect(() => {
               </Card>
             </>
           ) : (
-            <NoReportState savedReports={savedReports} onLoad={loadSavedReport} onGoUpload={() => setSection("upload")} />
+            <NoReportState savedReports={savedReports} onLoad={loadSavedReport} onGoSheets={() => setSection("sheets")} />
           )
         )}
  
@@ -981,13 +988,60 @@ useEffect(() => {
           />
         )}
  
-        {section === "upload" && (
-          <UploadSection
-            fileName={fileName} loading={loading} dragOver={dragOver} setDragOver={setDragOver}
-            inputRef={inputRef} handleFile={handleFile} saveStatus={saveStatus}
-            savedReports={savedReports} savedLoading={savedLoading} parsed={parsed}
-            loadSavedReport={loadSavedReport} removeSavedReport={removeSavedReport} error={error}
-          />
+        {section === "sheets" && (
+          <Card title="Live Google Sheets" desc="Open the shared workbook directly in Google Sheets">
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ fontSize: 13, color: COLORS.textDim, lineHeight: 1.5, maxWidth: 760 }}>
+                Use this sheet for direct live updates. It contains the running data, fuel balance, and any edits that should appear in the dashboard.
+              </div>
+              <a
+                href="https://docs.google.com/spreadsheets/d/1D34nuWkngNhA05O1O2t2nQ36wyLYo-FaCfEBpOxZS1o/edit?usp=sharing"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  width: "fit-content",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  background: COLORS.blueSoft,
+                  border: `1px solid ${COLORS.panelEdge}`,
+                  color: COLORS.navy,
+                  textDecoration: "none",
+                  fontWeight: 700,
+                  boxShadow: COLORS.shadowSoft,
+                }}
+              >
+                <Link2 size={15} />
+                Open Google Sheets
+              </a>
+            </div>
+          </Card>
+        )}
+
+        {section === "pmr" && (
+          <Card title="PMR Tracking" desc="Section coming soon">
+            <div style={{ padding: "18px 0", color: COLORS.textDim, fontSize: 12.5 }}>
+              Tell me what should go here and I’ll wire it in.
+            </div>
+          </Card>
+        )}
+
+        {section === "electricity" && (
+          <Card title="Electricity Performance" desc="Section coming soon">
+            <div style={{ padding: "18px 0", color: COLORS.textDim, fontSize: 12.5 }}>
+              Tell me what should go here and I’ll wire it in.
+            </div>
+          </Card>
+        )}
+
+        {section === "fuelperf" && (
+          <Card title="Fuel Performance" desc="Section coming soon">
+            <div style={{ padding: "18px 0", color: COLORS.textDim, fontSize: 12.5 }}>
+              Tell me what should go here and I’ll wire it in.
+            </div>
+          </Card>
         )}
         </div>
       </main>
