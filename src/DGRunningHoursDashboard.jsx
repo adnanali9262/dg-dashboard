@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
-import { getDailyMeterReadings, getSummaryData, getFuelBalanceData } from "./api/googleSheets";
+import { getDailyMeterReadings, getSummaryData, getFuelBalanceData, getPMRTrackingData } from "./api/googleSheets";
 
  import Card from "./components/Card";
 import { COLORS } from "./styles/colors";
@@ -55,6 +55,38 @@ function siteMatchKey(name) {
 
 function round2(value) {
   return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function formatPmDate(value) {
+  if (!value) return "No date";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No date";
+  return date.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function getPmDateStatus(pmDate, thresholdDays) {
+  const today = new Date();
+  const cutoffDate = new Date(today);
+  cutoffDate.setDate(today.getDate() - Number(thresholdDays || 0));
+  const normalizedCutoff = new Date(cutoffDate.getFullYear(), cutoffDate.getMonth(), cutoffDate.getDate());
+
+  if (!pmDate) {
+    return { bg: "#f9d8e2", text: COLORS.text, state: "pending" };
+  }
+
+  const parsedDate = new Date(pmDate);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return { bg: "#f9d8e2", text: COLORS.text, state: "pending" };
+  }
+
+  const normalizedDate = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
+  if (normalizedDate < normalizedCutoff) {
+    return { bg: "#f8c7da", text: COLORS.text, state: "overdue" };
+  }
+  if (normalizedDate.getTime() === normalizedCutoff.getTime()) {
+    return { bg: "#ffffff", text: COLORS.text, state: "threshold" };
+  }
+  return { bg: "#dff6e8", text: COLORS.text, state: "healthy" };
 }
 
 function findSiteConsumption(fuelBalanceDerived, siteName) {
@@ -366,15 +398,29 @@ export default function DGRunningHoursDashboard() {
   const [fuelBalanceData, setFuelBalanceData] = useState([]);
   const [fuelBalanceLoading, setFuelBalanceLoading] = useState(true);
   const [fuelBalanceError, setFuelBalanceError] = useState("");
-  const [_error, _setError] = useState(null);
-  const [_fileName, _setFileName] = useState("");
-  const [_loading, _setLoading] = useState(false);
+  const [pmrData, setPmrData] = useState([]);
+  const [pmrLoading, setPmrLoading] = useState(true);
+  const [pmrError, setPmrError] = useState("");
+  const [expandedExecutives, setExpandedExecutives] = useState({});
+  const PMR_THRESHOLD_STORAGE_KEY = "pmr-category-thresholds";
+  const [categoryThresholds, setCategoryThresholds] = useState(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      const saved = window.localStorage.getItem(PMR_THRESHOLD_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [error, setError] = useState(null);
+  const [fileName, setFileName] = useState("");
+  const [loading, setLoading] = useState(false);
   const [selectedSite, setSelectedSite] = useState("");
   const [selectedUsageDate, setSelectedUsageDate] = useState("");
-  const [_dragOver, _setDragOver] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [savedReports, setSavedReports] = useState([]);
-  const [_savedLoading, _setSavedLoading] = useState(true);
-  const [_saveStatus, _setSaveStatus] = useState("");
+  const [savedLoading, setSavedLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState("");
   const _inputRef = useRef(null);
  
   const [repairs, setRepairs] = useState([]);
@@ -443,6 +489,23 @@ useEffect(() => {
       if (!cancelled) {
         setFuelBalanceError(err.message || "Could not load fuel balance data.");
         setFuelBalanceLoading(false);
+      }
+    });
+
+  // Load PMR tracking data from the Google Sheet
+  getPMRTrackingData()
+    .then((data) => {
+      if (!cancelled) {
+        console.log("✓ Google Sheets PMR Data loaded:", data?.length || 0, "records");
+        setPmrData(data);
+        setPmrLoading(false);
+      }
+    })
+    .catch((err) => {
+      console.error("✗ Failed to load PMR tracking data:", err);
+      if (!cancelled) {
+        setPmrError(err.message || "Could not load PMR tracking data.");
+        setPmrLoading(false);
       }
     });
 
@@ -555,6 +618,184 @@ useEffect(() => {
     return Math.round(selectedUsageData.reduce((sum, item) => sum + item.hours, 0) * 100) / 100;
   }, [selectedUsageData]);
 
+  const pmrSiteNames = useMemo(() => {
+    const entries = pmrData
+      .map((item) => ({
+        name: normalizeSiteName(item.site),
+        executive: normalizeSiteName(item.executive),
+        category: normalizeSiteName(item.type || item.category || "Uncategorized"),
+        pmDate: item.pmDate || "",
+      }))
+      .filter((item) => item.name);
+
+    const groupedByExecutive = new Map();
+    entries.forEach((entry) => {
+      const executive = entry.executive || "Unassigned";
+      if (!groupedByExecutive.has(executive)) {
+        groupedByExecutive.set(executive, new Map());
+      }
+
+      const categoryMap = groupedByExecutive.get(executive);
+      const category = entry.category || "Uncategorized";
+      if (!categoryMap.has(category)) {
+        categoryMap.set(category, []);
+      }
+
+      const existing = categoryMap.get(category);
+      if (!existing.some((item) => item.name === entry.name)) {
+        existing.push(entry);
+      }
+    });
+
+    return [...groupedByExecutive.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([executive, categoryMap]) => ({
+        executive,
+        categories: [...categoryMap.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([category, sites]) => ({
+            category,
+            sites: sites.sort((a, b) => a.name.localeCompare(b.name)),
+          })),
+      }));
+  }, [pmrData]);
+
+  const pmrSummary = useMemo(() => {
+    const allEntries = pmrData
+      .map((item) => ({
+        name: normalizeSiteName(item.site),
+        executive: normalizeSiteName(item.executive),
+        pmDate: item.pmDate || "",
+      }))
+      .filter((item) => item.name);
+
+    const summary = allEntries.reduce(
+      (acc, entry) => {
+        const status = getPmDateStatus(entry.pmDate, 90);
+        if (status.state === "pending") {
+          acc.pending += 1;
+        } else if (status.state === "overdue") {
+          acc.overdue += 1;
+        } else {
+          acc.done += 1;
+        }
+        return acc;
+      },
+      { done: 0, pending: 0, overdue: 0 }
+    );
+
+    return summary;
+  }, [pmrData]);
+
+  const executiveSummaries = useMemo(() => {
+    return pmrSiteNames.map((group) => {
+      const counts = group.categories.reduce(
+        (acc, categoryGroup) => {
+          categoryGroup.sites.forEach((entry) => {
+            const status = getPmDateStatus(entry.pmDate, 90);
+            if (status.state === "pending") {
+              acc.pending += 1;
+            } else if (status.state === "overdue") {
+              acc.overdue += 1;
+            } else {
+              acc.done += 1;
+            }
+          });
+          return acc;
+        },
+        { done: 0, pending: 0, overdue: 0 }
+      );
+
+      return {
+        executive: group.executive,
+        ...counts,
+      };
+    });
+  }, [pmrSiteNames]);
+
+  const categoryStatusSummaries = useMemo(() => {
+    const categoryMap = new Map();
+
+    pmrSiteNames.forEach((group) => {
+      group.categories.forEach((categoryGroup) => {
+        const categoryLabel = categoryGroup.category;
+        const categoryKey = normalizeSiteName(categoryLabel);
+        const thresholdValue = Number(categoryThresholds[categoryKey] ?? 90);
+
+        if (!categoryMap.has(categoryKey)) {
+          categoryMap.set(categoryKey, {
+            category: categoryLabel,
+            done: 0,
+            pending: 0,
+            overdue: 0,
+          });
+        }
+
+        const summary = categoryMap.get(categoryKey);
+        categoryGroup.sites.forEach((entry) => {
+          const status = getPmDateStatus(entry.pmDate, thresholdValue);
+          if (status.state === "pending") {
+            summary.pending += 1;
+          } else if (status.state === "overdue") {
+            summary.overdue += 1;
+          } else {
+            summary.done += 1;
+          }
+        });
+      });
+    });
+
+    return [...categoryMap.values()].sort((a, b) => a.category.localeCompare(b.category));
+  }, [pmrSiteNames, categoryThresholds]);
+
+  useEffect(() => {
+    if (!pmrSiteNames.length) return;
+
+    setCategoryThresholds((prev) => {
+      const next = { ...prev };
+      let changed = false;
+
+      pmrSiteNames.forEach((group) => {
+        group.categories.forEach((categoryGroup) => {
+          const categoryKey = normalizeSiteName(categoryGroup.category);
+          if (!(categoryKey in next)) {
+            next[categoryKey] = 90;
+            changed = true;
+          }
+        });
+      });
+
+      return changed ? next : prev;
+    });
+  }, [pmrSiteNames]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(PMR_THRESHOLD_STORAGE_KEY, JSON.stringify(categoryThresholds));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [categoryThresholds]);
+
+  const getThresholdValue = useCallback((category) => {
+    const categoryKey = normalizeSiteName(category);
+    return Number(categoryThresholds[categoryKey] ?? 90);
+  }, [categoryThresholds]);
+
+  const updateThresholdValue = useCallback((category, value) => {
+    const categoryKey = normalizeSiteName(category);
+    const parsedValue = Number.isNaN(Number(value)) ? 90 : Math.min(90, Math.max(0, Number(value)));
+    setCategoryThresholds((prev) => ({ ...prev, [categoryKey]: parsedValue }));
+  }, []);
+
+  const toggleExecutive = useCallback((executive) => {
+    setExpandedExecutives((prev) => ({
+      ...prev,
+      [executive]: !prev[executive],
+    }));
+  }, []);
+
   const selectedFuelConsumedTotal = useMemo(() => {
     return round2(selectedUsageData.reduce((sum, item) => sum + item.fuelConsumed, 0));
   }, [selectedUsageData]);
@@ -648,9 +889,17 @@ useEffect(() => {
     summary: { title: "Summary of DGs", desc: "", icon: LayoutDashboard },
     usage: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Activity },
     fuel: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Fuel },
+    pmr: { title: "PMR Tracking", desc: "Live site names from the PMR Tracking Google Sheet", icon: ClipboardList },
     repair: { title: "DG Repair History", desc: "Log and track generator repairs, spares used, and status", icon: Wrench },
     sheets: { title: "Google Sheets", desc: "Open the live workbook directly", icon: Link2 },
-  }[section];
+    electricity: { title: "Electricity Performance", desc: "Coming soon", icon: Activity },
+    fuelperf: { title: "Fuel Performance", desc: "Coming soon", icon: Fuel },
+    contact: { title: "Contact", desc: "Coming soon", icon: ClipboardList },
+  }[section] || {
+    title: "Dashboard",
+    desc: "",
+    icon: LayoutDashboard,
+  };
   const HeaderIcon = sectionMeta.icon;
   const currentDate = now.toLocaleDateString("en-PK", {
     weekday: "short",
@@ -972,6 +1221,194 @@ useEffect(() => {
           ) : (
             <NoReportState savedReports={savedReports} onLoad={loadSavedReport} onGoSheets={() => setSection("sheets")} />
           )
+        )}
+ 
+        {section === "pmr" && (
+          <Card
+            title="PMR tracking sites"
+            desc="PMR sites grouped by executive and category"
+            style={{ marginBottom: 0, background: "linear-gradient(135deg, #f9fbff 0%, #f3f7ff 100%)" }}
+          >
+            {pmrLoading ? (
+              <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                Loading PMR tracking data from Google Sheets...
+              </div>
+            ) : pmrError ? (
+              <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                {pmrError}
+              </div>
+            ) : pmrSiteNames.length > 0 ? (
+              <div style={{ display: "grid", gap: 16 }}>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 170, padding: "10px 12px", borderRadius: 12, background: "#ffffff", border: `1px solid ${COLORS.panelEdge}`, boxShadow: "0 4px 12px rgba(16,36,62,0.05)" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>Done</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.navy }}>{pmrSummary.done}</div>
+                    <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {categoryStatusSummaries.filter((item) => item.done > 0).slice(0, 4).map((item) => (
+                        <span key={`${item.category}-done`} style={{ fontSize: 10.5, padding: "3px 7px", borderRadius: 999, background: "#eef5ff", color: COLORS.navy }}>
+                          {item.category}: {item.done}
+                        </span>
+                      ))}
+                      {categoryStatusSummaries.filter((item) => item.done > 0).length === 0 && (
+                        <span style={{ fontSize: 10.5, color: COLORS.textDim }}>No done categories</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 170, padding: "10px 12px", borderRadius: 12, background: "#ffffff", border: `1px solid ${COLORS.panelEdge}`, boxShadow: "0 4px 12px rgba(16,36,62,0.05)" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>Pending</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#b23a5a" }}>{pmrSummary.pending}</div>
+                    <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {categoryStatusSummaries.filter((item) => item.pending > 0).slice(0, 4).map((item) => (
+                        <span key={`${item.category}-pending`} style={{ fontSize: 10.5, padding: "3px 7px", borderRadius: 999, background: "#fff0f4", color: "#b23a5a" }}>
+                          {item.category}: {item.pending}
+                        </span>
+                      ))}
+                      {categoryStatusSummaries.filter((item) => item.pending > 0).length === 0 && (
+                        <span style={{ fontSize: 10.5, color: COLORS.textDim }}>No pending categories</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 170, padding: "10px 12px", borderRadius: 12, background: "#ffffff", border: `1px solid ${COLORS.panelEdge}`, boxShadow: "0 4px 12px rgba(16,36,62,0.05)" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>Overdue</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.navy }}>{pmrSummary.overdue}</div>
+                    <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {categoryStatusSummaries.filter((item) => item.overdue > 0).slice(0, 4).map((item) => (
+                        <span key={`${item.category}-overdue`} style={{ fontSize: 10.5, padding: "3px 7px", borderRadius: 999, background: "#f4f7fb", color: COLORS.navy }}>
+                          {item.category}: {item.overdue}
+                        </span>
+                      ))}
+                      {categoryStatusSummaries.filter((item) => item.overdue > 0).length === 0 && (
+                        <span style={{ fontSize: 10.5, color: COLORS.textDim }}>No overdue categories</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {pmrSiteNames.map((group) => {
+                  const isExpanded = expandedExecutives[group.executive] !== false;
+                  return (
+                    <div key={group.executive} style={{ display: "grid", gap: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleExecutive(group.executive)}
+                        style={{
+                          padding: "12px 14px",
+                          borderRadius: 12,
+                          background: "#ffffff",
+                          border: `1px solid ${COLORS.panelEdge}`,
+                          boxShadow: "0 6px 18px rgba(16,36,62,0.06)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.navy }}>
+                            {group.executive}
+                          </div>
+                          <div style={{ marginTop: 6, fontSize: 12, fontWeight: 600, color: COLORS.textDim }}>
+                            {group.categories.map((categoryGroup) => `${categoryGroup.category} (${categoryGroup.sites.length})`).join(" • ")}
+                          </div>
+                          <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {(() => {
+                              const summary = executiveSummaries.find((item) => item.executive === group.executive);
+                              return summary ? (
+                                <>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.navy, background: "#eef5ff", padding: "3px 8px", borderRadius: 999 }}>
+                                    Done: {summary.done}
+                                  </span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: "#b23a5a", background: "#fff0f4", padding: "3px 8px", borderRadius: 999 }}>
+                                    Pending: {summary.pending}
+                                  </span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.navy, background: "#f4f7fb", padding: "3px 8px", borderRadius: 999 }}>
+                                    Overdue: {summary.overdue}
+                                  </span>
+                                </>
+                              ) : null;
+                            })()}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 16, color: COLORS.navy, fontWeight: 700 }}>
+                          {isExpanded ? "▾" : "▸"}
+                        </div>
+                      </button>
+                      {isExpanded && (
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                          {group.categories.map((categoryGroup) => {
+                        const thresholdValue = getThresholdValue(categoryGroup.category);
+                        const pendingCount = categoryGroup.sites.filter((entry) => !entry.pmDate).length;
+                        const overdueCount = categoryGroup.sites.filter((entry) => {
+                          const status = getPmDateStatus(entry.pmDate, thresholdValue);
+                          return status.state === "overdue" || status.state === "pending";
+                        }).length;
+                        return (
+                          <div key={categoryGroup.category} style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 250, flex: 1, padding: "12px", borderRadius: 14, background: "#ffffff", border: `1px solid ${COLORS.panelEdge}`, boxShadow: "0 4px 14px rgba(16,36,62,0.05)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 800, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                                {categoryGroup.category} ({categoryGroup.sites.length})
+                              </div>
+                              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: COLORS.textDim }}>
+                                <span>Threshold</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="90"
+                                  step="1"
+                                  value={thresholdValue}
+                                  onChange={(event) => updateThresholdValue(categoryGroup.category, event.target.value)}
+                                  style={{ width: 48, border: `1px solid ${COLORS.panelEdge}`, borderRadius: 6, padding: "4px 6px", fontSize: 11, color: COLORS.text, background: "#fcfdff" }}
+                                />
+                                <span>days</span>
+                              </label>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "6px 0 2px", borderBottom: `1px solid ${COLORS.panelEdge}` }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: "#b23a5a" }}>Pending: {pendingCount}</span>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.navy }}>Overdue: {overdueCount}</span>
+                            </div>
+                            <div style={{ display: "grid", gap: 8, marginTop: 2 }}>
+                              {categoryGroup.sites.map((entry) => {
+                                const statusStyle = getPmDateStatus(entry.pmDate, thresholdValue);
+                                return (
+                                  <div
+                                    key={entry.name}
+                                    style={{
+                                      padding: "10px 12px",
+                                      borderRadius: 10,
+                                      border: `1px solid ${COLORS.panelEdge}`,
+                                      background: statusStyle.bg,
+                                      color: COLORS.text,
+                                      fontWeight: 700,
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      gap: 10,
+                                      alignItems: "center",
+                                      boxShadow: "0 2px 8px rgba(16,36,62,0.03)",
+                                    }}
+                                  >
+                                    <span style={{ fontSize: 13 }}>{entry.name}</span>
+                                    <span style={{ color: COLORS.textDim, fontSize: 11.5, fontWeight: 600 }}>
+                                      {formatPmDate(entry.pmDate)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                No PMR site names were returned from the Google Sheet.
+              </div>
+            )}
+          </Card>
         )}
  
         {section === "repair" && (

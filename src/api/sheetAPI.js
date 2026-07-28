@@ -46,7 +46,10 @@ export async function appendSheetRow(sheetName, rowData) {
   try {
     const response = await fetch(SHEET_API_URL, {
       method: "POST",
-      payload: JSON.stringify({
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
         action: "appendData",
         sheet: sheetName,
         ...rowData,
@@ -82,7 +85,10 @@ export async function updateSheetRow(sheetName, id, updateData) {
   try {
     const response = await fetch(`${SHEET_API_URL}?action=updateData&sheet=${encodeURIComponent(sheetName)}&id=${id}`, {
       method: "POST",
-      payload: JSON.stringify(updateData),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(updateData),
     });
 
     if (!response.ok) {

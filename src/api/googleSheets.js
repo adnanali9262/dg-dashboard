@@ -188,6 +188,16 @@ export async function getFuelBalanceData() {
   }
 }
 
+function getRowValue(row, aliases) {
+  for (const alias of aliases) {
+    const value = row?.[alias];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+  return "";
+}
+
 function parsePMRRows(payload) {
   if (payload.error) {
     throw new Error(payload.error);
@@ -199,7 +209,7 @@ function parsePMRRows(payload) {
   if (Array.isArray(data[0])) {
     const headers = data[0];
     const executiveCol = getHeaderIndex(headers, [/executive/i, /field\s*executive/i, /incharge/i, /owner/i]);
-    const siteCol = getHeaderIndex(headers, [/site/i, /exchange/i, /name/i, /location/i]);
+    const siteCol = getHeaderIndex(headers, [/site\s*name/i, /site/i, /exchange/i, /name/i, /location/i]);
     const typeCol = getHeaderIndex(headers, [/msag/i, /msan/i, /type/i, /category/i, /network/i]);
     const pmDateCol = getHeaderIndex(headers, [/pm\s*date/i, /date/i, /done\s*date/i, /completion/i, /completed/i]);
 
@@ -212,13 +222,16 @@ function parsePMRRows(payload) {
     })).filter((row) => row.executive || row.site);
   }
 
-  return data.map((row) => ({
-    executive: String(row.Executive || row.executive || row["Field Executive"] || row["Engineer"] || row.Owner || "").trim(),
-    site: String(row.Site || row.site || row.Exchange || row.exchange || row["Name of Exchange"] || "").trim(),
-    type: String(row.Type || row.type || row.Category || row.category || row["Site Type"] || row["Network Type"] || "").trim(),
-    pmDate: String(row["PM Date"] || row.PMDate || row.date || row.Date || row["PM Done Date"] || "").trim(),
-    status: String(row["PM Date"] || row.PMDate || row.date || row.Date || row["PM Done Date"] || "").trim() ? "PM Done" : "Pending",
-  })).filter((row) => row.executive || row.site);
+  return data.map((row) => {
+    const pmDate = getRowValue(row, ["PM date", "PMDate", "PM_Date", "date", "Date", "PM Done Date", "Completion Date"]);
+    return {
+      executive: getRowValue(row, ["Executive", "executive", "Field Executive", "Field_Executive", "Engineer", "Owner"]),
+      site: getRowValue(row, ["Site Name", "SiteName", "Site", "site", "Exchange", "exchange", "Name of Exchange", "Name", "Location"]),
+      type: getRowValue(row, ["Category", "Type", "type", "Site Type", "Network Type"]),
+      pmDate,
+      status: pmDate ? "PM Done" : "Pending",
+    };
+  }).filter((row) => row.executive || row.site);
 }
 
 export async function getPMRTrackingData() {
