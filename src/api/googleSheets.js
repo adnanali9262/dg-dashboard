@@ -95,6 +95,7 @@ export async function getSummaryData() {
 }
 
 const FUEL_BALANCE_SHEET_NAMES = ["Fuel Balance", "Fuel_Balance", "DG Fuel Balance", "Fuel"];
+const PMR_SHEET_NAMES = ["PMR Tracking", "PMR_Tracking", "PMR"];
 
 function getHeaderIndex(headers, patterns) {
   return headers.findIndex((header) => {
@@ -183,6 +184,58 @@ export async function getFuelBalanceData() {
     return [];
   } catch (error) {
     console.error("✗ Error in getFuelBalanceData:", error);
+    return [];
+  }
+}
+
+function parsePMRRows(payload) {
+  if (payload.error) {
+    throw new Error(payload.error);
+  }
+
+  const data = Array.isArray(payload) ? payload : payload.data || payload.value || [];
+  if (!Array.isArray(data) || data.length === 0) return [];
+
+  if (Array.isArray(data[0])) {
+    const headers = data[0];
+    const executiveCol = getHeaderIndex(headers, [/executive/i, /field\s*executive/i, /incharge/i, /owner/i]);
+    const siteCol = getHeaderIndex(headers, [/site/i, /exchange/i, /name/i, /location/i]);
+    const typeCol = getHeaderIndex(headers, [/msag/i, /msan/i, /type/i, /category/i, /network/i]);
+    const pmDateCol = getHeaderIndex(headers, [/pm\s*date/i, /date/i, /done\s*date/i, /completion/i, /completed/i]);
+
+    return data.slice(1).map((row) => ({
+      executive: executiveCol === -1 ? String(row[0] || "").trim() : String(row[executiveCol] || "").trim(),
+      site: siteCol === -1 ? String(row[1] || "").trim() : String(row[siteCol] || "").trim(),
+      type: typeCol === -1 ? String(row[2] || "").trim() : String(row[typeCol] || "").trim(),
+      pmDate: pmDateCol === -1 ? String(row[3] || "").trim() : String(row[pmDateCol] || "").trim(),
+      status: String((pmDateCol === -1 ? row[3] : row[pmDateCol]) || "").trim() ? "PM Done" : "Pending",
+    })).filter((row) => row.executive || row.site);
+  }
+
+  return data.map((row) => ({
+    executive: String(row.Executive || row.executive || row["Field Executive"] || row["Engineer"] || row.Owner || "").trim(),
+    site: String(row.Site || row.site || row.Exchange || row.exchange || row["Name of Exchange"] || "").trim(),
+    type: String(row.Type || row.type || row.Category || row.category || row["Site Type"] || row["Network Type"] || "").trim(),
+    pmDate: String(row["PM Date"] || row.PMDate || row.date || row.Date || row["PM Done Date"] || "").trim(),
+    status: String(row["PM Date"] || row.PMDate || row.date || row.Date || row["PM Done Date"] || "").trim() ? "PM Done" : "Pending",
+  })).filter((row) => row.executive || row.site);
+}
+
+export async function getPMRTrackingData() {
+  try {
+    for (const sheetName of PMR_SHEET_NAMES) {
+      const response = await fetch(
+        `${API_URL}?action=getData&sheet=${encodeURIComponent(sheetName)}`
+      );
+
+      if (!response.ok) continue;
+      const payload = await response.json();
+      const rows = parsePMRRows(payload);
+      if (rows.length > 0) return rows;
+    }
+    return [];
+  } catch (error) {
+    console.error("✗ Error in getPMRTrackingData:", error);
     return [];
   }
 }

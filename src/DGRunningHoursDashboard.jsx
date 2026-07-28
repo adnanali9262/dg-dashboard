@@ -7,8 +7,7 @@ import {
 import { parseWorkbook } from "./services/excelParser";
 import {
   Gauge, Fuel, AlertTriangle, Check,
-  Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays, Link2,
-  ClipboardCheck, Zap, Droplets, FileSpreadsheet, Mail, UserRound
+  Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays, Link2
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
@@ -648,13 +647,9 @@ useEffect(() => {
   const sectionMeta = {
     summary: { title: "Summary of DGs", desc: "", icon: LayoutDashboard },
     usage: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Activity },
-    pmr: { title: "PMR Tracking", desc: "Section coming soon", icon: ClipboardCheck },
-    electricity: { title: "Electricity Performance", desc: "Section coming soon", icon: Zap },
-    fuelperf: { title: "Fuel Performance", desc: "Section coming soon", icon: Droplets },
     fuel: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Fuel },
     repair: { title: "DG Repair History", desc: "Log and track generator repairs, spares used, and status", icon: Wrench },
-    sheets: { title: "Google Sheets", desc: "Open the live workbook directly", icon: FileSpreadsheet },
-    contact: { title: "Contact", desc: "Feedback and developer details", icon: Mail },
+    sheets: { title: "Google Sheets", desc: "Open the live workbook directly", icon: Link2 },
   }[section];
   const HeaderIcon = sectionMeta.icon;
   const currentDate = now.toLocaleDateString("en-PK", {
@@ -773,19 +768,19 @@ useEffect(() => {
                 </div>
               ) : selectedUsageData.length > 0 ? (
                     <ResponsiveContainer width="100%" height={Math.max(300, selectedUsageData.length * 36)}>
-                  <BarChart data={selectedUsageData} layout="vertical" barCategoryGap={10} barGap={4} margin={{ top: 8, right: 56, left: 10, bottom: 0 }}>
+                  <BarChart data={selectedUsageData} layout="vertical" barCategoryGap={8} margin={{ top: 8, right: 56, left: 10, bottom: 0 }}>
                     <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
                     <YAxis type="category" dataKey="name" width={280} interval={0} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
                     <Legend verticalAlign="top" align="left" iconType="circle" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "'IBM Plex Sans', sans-serif" }} />
                     <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="hours" name="Run hours" fill={COLORS.red} radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={18}>
+                    <Bar dataKey="hours" name="Run hours" fill={COLORS.red} radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={24}>
                       <LabelList dataKey="hours" position="right" formatter={(value) => `${value}h`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
                     </Bar>
-                    <Bar dataKey="perHourFuelConsumption" name="Fuel consumption" fill={COLORS.amber} radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={18}>
+                    <Bar dataKey="perHourFuelConsumption" name="Fuel consumption" fill={COLORS.amber} radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={24}>
                       <LabelList dataKey="perHourFuelConsumption" position="right" formatter={(value) => `${value}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
                     </Bar>
-                    <Bar dataKey="fuelConsumed" name="Fuel consumed" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={18}>
+                    <Bar dataKey="fuelConsumed" name="Fuel consumed" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={24}>
                       <LabelList dataKey="fuelConsumed" position="right" formatter={(value) => `${value}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
                     </Bar>
                   </BarChart>
@@ -1017,49 +1012,6 @@ useEffect(() => {
                 <Link2 size={15} />
                 Open Google Sheets
               </a>
-            </div>
-          </Card>
-        )}
-
-        {section === "contact" && (
-          <Card title="Contact" desc="Feedback and contact">
-            <div style={{ display: "grid", gap: 12, maxWidth: 720 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, color: COLORS.text, fontWeight: 700 }}>
-                <UserRound size={16} color={COLORS.blue} />
-                Developer: Engr. Adnan Rafiq
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, color: COLORS.text, fontWeight: 600 }}>
-                <Mail size={16} color={COLORS.red} />
-                Email: <a href="mailto:adnan.rafiq173@gmail.com" style={{ color: COLORS.blue, textDecoration: "none" }}>adnan.rafiq173@gmail.com</a>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, color: COLORS.text, fontWeight: 600 }}>
-                <Link2 size={16} color={COLORS.navy} />
-                GitHub: <a href="https://github.com/adnanali9262" target="_blank" rel="noreferrer" style={{ color: COLORS.blue, textDecoration: "none" }}>github.com/adnanali9262</a>
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {section === "pmr" && (
-          <Card title="PMR Tracking" desc="Section coming soon">
-            <div style={{ padding: "18px 0", color: COLORS.textDim, fontSize: 12.5 }}>
-              Tell me what should go here and I’ll wire it in.
-            </div>
-          </Card>
-        )}
-
-        {section === "electricity" && (
-          <Card title="Electricity Performance" desc="Section coming soon">
-            <div style={{ padding: "18px 0", color: COLORS.textDim, fontSize: 12.5 }}>
-              Tell me what should go here and I’ll wire it in.
-            </div>
-          </Card>
-        )}
-
-        {section === "fuelperf" && (
-          <Card title="Fuel Performance" desc="Section coming soon">
-            <div style={{ padding: "18px 0", color: COLORS.textDim, fontSize: 12.5 }}>
-              Tell me what should go here and I’ll wire it in.
             </div>
           </Card>
         )}
