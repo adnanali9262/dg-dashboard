@@ -49,6 +49,21 @@ function normalizeSiteName(name) {
     .trim();
 }
 
+const PMR_CATEGORY_BUCKETS = [
+  { key: "solar", label: "Solar Sites" },
+  { key: "exchange", label: "Exchange" },
+  { key: "msag", label: "MSAG" },
+];
+
+function getPmrCategoryBucket(category) {
+  const normalizedCategory = normalizeSiteName(category).toLowerCase();
+  if (normalizedCategory.includes("solar")) return "solar";
+  if (normalizedCategory.includes("msag")) return "msag";
+  if (normalizedCategory.includes("exchange")) return "exchange";
+  // Keep unexpected labels within the Exchange bucket so top cards remain fixed to 3 categories.
+  return "exchange";
+}
+
 function siteMatchKey(name) {
   return normalizeSiteName(name).toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -660,39 +675,14 @@ useEffect(() => {
       }));
   }, [pmrData]);
 
-  const pmrSummary = useMemo(() => {
-    const allEntries = pmrData
-      .map((item) => ({
-        name: normalizeSiteName(item.site),
-        executive: normalizeSiteName(item.executive),
-        pmDate: item.pmDate || "",
-      }))
-      .filter((item) => item.name);
-
-    const summary = allEntries.reduce(
-      (acc, entry) => {
-        const status = getPmDateStatus(entry.pmDate, 90);
-        if (status.state === "pending") {
-          acc.pending += 1;
-        } else if (status.state === "overdue") {
-          acc.overdue += 1;
-        } else {
-          acc.done += 1;
-        }
-        return acc;
-      },
-      { done: 0, pending: 0, overdue: 0 }
-    );
-
-    return summary;
-  }, [pmrData]);
-
   const executiveSummaries = useMemo(() => {
     return pmrSiteNames.map((group) => {
       const counts = group.categories.reduce(
         (acc, categoryGroup) => {
+          const categoryKey = normalizeSiteName(categoryGroup.category);
+          const thresholdValue = Number(categoryThresholds[categoryKey] ?? 90);
           categoryGroup.sites.forEach((entry) => {
-            const status = getPmDateStatus(entry.pmDate, 90);
+            const status = getPmDateStatus(entry.pmDate, thresholdValue);
             if (status.state === "pending") {
               acc.pending += 1;
             } else if (status.state === "overdue") {
@@ -711,27 +701,60 @@ useEffect(() => {
         ...counts,
       };
     });
-  }, [pmrSiteNames]);
+  }, [pmrSiteNames, categoryThresholds]);
+
+  const executiveCategoryStatusSummaries = useMemo(() => {
+    const summaryByExecutive = new Map();
+
+    pmrSiteNames.forEach((group) => {
+      const bucketCounts = PMR_CATEGORY_BUCKETS.reduce((acc, item) => {
+        acc[item.key] = { done: 0, pending: 0, overdue: 0 };
+        return acc;
+      }, {});
+
+      group.categories.forEach((categoryGroup) => {
+        const categoryKey = normalizeSiteName(categoryGroup.category);
+        const categoryBucket = getPmrCategoryBucket(categoryGroup.category);
+        const thresholdValue = Number(categoryThresholds[categoryKey] ?? 90);
+
+        categoryGroup.sites.forEach((entry) => {
+          const status = getPmDateStatus(entry.pmDate, thresholdValue);
+          if (status.state === "pending") {
+            bucketCounts[categoryBucket].pending += 1;
+          } else if (status.state === "overdue") {
+            bucketCounts[categoryBucket].overdue += 1;
+          } else {
+            bucketCounts[categoryBucket].done += 1;
+          }
+        });
+      });
+
+      summaryByExecutive.set(
+        group.executive,
+        PMR_CATEGORY_BUCKETS.map((item) => ({
+          category: item.label,
+          done: bucketCounts[item.key].done,
+          pending: bucketCounts[item.key].pending,
+          overdue: bucketCounts[item.key].overdue,
+        }))
+      );
+    });
+
+    return summaryByExecutive;
+  }, [pmrSiteNames, categoryThresholds]);
 
   const categoryStatusSummaries = useMemo(() => {
-    const categoryMap = new Map();
+    const categoryMap = PMR_CATEGORY_BUCKETS.reduce((acc, item) => {
+      acc[item.key] = { done: 0, pending: 0, overdue: 0 };
+      return acc;
+    }, {});
 
     pmrSiteNames.forEach((group) => {
       group.categories.forEach((categoryGroup) => {
-        const categoryLabel = categoryGroup.category;
-        const categoryKey = normalizeSiteName(categoryLabel);
+        const categoryKey = normalizeSiteName(categoryGroup.category);
+        const categoryBucket = getPmrCategoryBucket(categoryGroup.category);
         const thresholdValue = Number(categoryThresholds[categoryKey] ?? 90);
-
-        if (!categoryMap.has(categoryKey)) {
-          categoryMap.set(categoryKey, {
-            category: categoryLabel,
-            done: 0,
-            pending: 0,
-            overdue: 0,
-          });
-        }
-
-        const summary = categoryMap.get(categoryKey);
+        const summary = categoryMap[categoryBucket];
         categoryGroup.sites.forEach((entry) => {
           const status = getPmDateStatus(entry.pmDate, thresholdValue);
           if (status.state === "pending") {
@@ -745,8 +768,24 @@ useEffect(() => {
       });
     });
 
-    return [...categoryMap.values()].sort((a, b) => a.category.localeCompare(b.category));
+    return PMR_CATEGORY_BUCKETS.map((item) => ({
+      category: item.label,
+      done: categoryMap[item.key].done,
+      pending: categoryMap[item.key].pending,
+      overdue: categoryMap[item.key].overdue,
+    }));
   }, [pmrSiteNames, categoryThresholds]);
+
+  const pmrSummary = useMemo(() => {
+    return categoryStatusSummaries.reduce(
+      (acc, item) => ({
+        done: acc.done + item.done,
+        pending: acc.pending + item.pending,
+        overdue: acc.overdue + item.overdue,
+      }),
+      { done: 0, pending: 0, overdue: 0 }
+    );
+  }, [categoryStatusSummaries]);
 
   useEffect(() => {
     if (!pmrSiteNames.length) return;
@@ -788,6 +827,24 @@ useEffect(() => {
     const parsedValue = Number.isNaN(Number(value)) ? 90 : Math.min(90, Math.max(0, Number(value)));
     setCategoryThresholds((prev) => ({ ...prev, [categoryKey]: parsedValue }));
   }, []);
+
+  const thresholdCategories = useMemo(() => {
+    const categoryMap = new Map();
+    pmrSiteNames.forEach((group) => {
+      group.categories.forEach((categoryGroup) => {
+        const categoryLabel = categoryGroup.category;
+        const categoryKey = normalizeSiteName(categoryLabel);
+        if (!categoryMap.has(categoryKey)) {
+          categoryMap.set(categoryKey, {
+            category: categoryLabel,
+            value: Number(categoryThresholds[categoryKey] ?? 90),
+          });
+        }
+      });
+    });
+
+    return [...categoryMap.values()].sort((a, b) => a.category.localeCompare(b.category));
+  }, [pmrSiteNames, categoryThresholds]);
 
   const toggleExecutive = useCallback((executive) => {
     setExpandedExecutives((prev) => ({
@@ -1239,100 +1296,174 @@ useEffect(() => {
               </div>
             ) : pmrSiteNames.length > 0 ? (
               <div style={{ display: "grid", gap: 16 }}>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 170, padding: "10px 12px", borderRadius: 12, background: "#ffffff", border: `1px solid ${COLORS.panelEdge}`, boxShadow: "0 4px 12px rgba(16,36,62,0.05)" }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>Done</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.navy }}>{pmrSummary.done}</div>
-                    <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {categoryStatusSummaries.filter((item) => item.done > 0).slice(0, 4).map((item) => (
-                        <span key={`${item.category}-done`} style={{ fontSize: 10.5, padding: "3px 7px", borderRadius: 999, background: "#eef5ff", color: COLORS.navy }}>
-                          {item.category}: {item.done}
-                        </span>
-                      ))}
-                      {categoryStatusSummaries.filter((item) => item.done > 0).length === 0 && (
-                        <span style={{ fontSize: 10.5, color: COLORS.textDim }}>No done categories</span>
-                      )}
+                <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 14, background: "#ffffff", boxShadow: "0 6px 18px rgba(16,36,62,0.05)", padding: 12, display: "grid", gap: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.5, padding: "2px 2px 0" }}>
+                      Bahawalpur Rural
+                    </div>
+                    <div style={{ padding: "7px 8px", borderRadius: 10, background: "#fcfdff", border: `1px solid ${COLORS.panelEdge}`, display: "grid", gap: 6, minWidth: 240 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                        Thresholds (Days)
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {thresholdCategories.map((item) => (
+                          <label key={`threshold-${item.category}`} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: COLORS.textDim, padding: "4px 6px", borderRadius: 8, border: `1px solid ${COLORS.panelEdge}`, background: "#ffffff" }}>
+                            <span style={{ fontWeight: 700, color: COLORS.navy }}>{item.category}</span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="90"
+                              step="1"
+                              value={item.value}
+                              onChange={(event) => updateThresholdValue(item.category, event.target.value)}
+                              style={{ width: 44, border: `1px solid ${COLORS.panelEdge}`, borderRadius: 6, padding: "3px 5px", fontSize: 10.5, color: COLORS.text, background: "#ffffff" }}
+                            />
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <div style={{ flex: 1, minWidth: 170, padding: "10px 12px", borderRadius: 12, background: "#ffffff", border: `1px solid ${COLORS.panelEdge}`, boxShadow: "0 4px 12px rgba(16,36,62,0.05)" }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>Pending</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "#b23a5a" }}>{pmrSummary.pending}</div>
-                    <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {categoryStatusSummaries.filter((item) => item.pending > 0).slice(0, 4).map((item) => (
-                        <span key={`${item.category}-pending`} style={{ fontSize: 10.5, padding: "3px 7px", borderRadius: 999, background: "#fff0f4", color: "#b23a5a" }}>
-                          {item.category}: {item.pending}
-                        </span>
-                      ))}
-                      {categoryStatusSummaries.filter((item) => item.pending > 0).length === 0 && (
-                        <span style={{ fontSize: 10.5, color: COLORS.textDim }}>No pending categories</span>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 170, padding: "10px 12px", borderRadius: 12, background: "#ffffff", border: `1px solid ${COLORS.panelEdge}`, boxShadow: "0 4px 12px rgba(16,36,62,0.05)" }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>Overdue</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.navy }}>{pmrSummary.overdue}</div>
-                    <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {categoryStatusSummaries.filter((item) => item.overdue > 0).slice(0, 4).map((item) => (
-                        <span key={`${item.category}-overdue`} style={{ fontSize: 10.5, padding: "3px 7px", borderRadius: 999, background: "#f4f7fb", color: COLORS.navy }}>
-                          {item.category}: {item.overdue}
-                        </span>
-                      ))}
-                      {categoryStatusSummaries.filter((item) => item.overdue > 0).length === 0 && (
-                        <span style={{ fontSize: 10.5, color: COLORS.textDim }}>No overdue categories</span>
-                      )}
-                    </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
+                    {[
+                      { key: "done", label: "Done", total: pmrSummary.done, titleColor: "#0f5132", cardBg: "#f3fbf6", edge: "#bee7cd", cellBg: "#e8f7ee" },
+                      { key: "pending", label: "Pending", total: pmrSummary.pending, titleColor: "#8a1c3a", cardBg: "#fff5f8", edge: "#f0bfd0", cellBg: "#ffeaf0" },
+                      { key: "overdue", label: "Overdue", total: pmrSummary.overdue, titleColor: "#7a3e00", cardBg: "#fff8ef", edge: "#f0d1a8", cellBg: "#fff0db" },
+                      { key: "totalSites", label: "Total Sites", total: pmrSummary.done + pmrSummary.pending + pmrSummary.overdue, titleColor: "#143f75", cardBg: "#f2f7ff", edge: "#b9d3f4", cellBg: "#e8f1ff" },
+                    ].map((statusCard) => (
+                      <div
+                        key={statusCard.key}
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          background: statusCard.cardBg,
+                          border: `1px solid ${statusCard.edge}`,
+                          boxShadow: "0 4px 12px rgba(16,36,62,0.05)",
+                          display: "grid",
+                          gap: 8,
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: statusCard.titleColor, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                            {statusCard.label}
+                          </div>
+                          <div style={{ fontSize: 22, fontWeight: 900, color: statusCard.titleColor, lineHeight: 1 }}>
+                            {statusCard.total}
+                          </div>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
+                          {categoryStatusSummaries.map((item) => (
+                            <div
+                              key={`${statusCard.key}-${item.category}`}
+                              style={{
+                                background: statusCard.cellBg,
+                                border: `1px solid ${statusCard.edge}`,
+                                borderRadius: 8,
+                                padding: "6px 7px",
+                                display: "grid",
+                                gap: 3,
+                              }}
+                            >
+                              <div style={{ fontSize: 9.5, fontWeight: 700, color: statusCard.titleColor, textTransform: "uppercase", letterSpacing: 0.2 }}>
+                                {item.category}
+                              </div>
+                              <div style={{ fontSize: 14, fontWeight: 900, color: statusCard.titleColor, lineHeight: 1 }}>
+                                {statusCard.key === "totalSites"
+                                  ? item.done + item.pending + item.overdue
+                                  : item[statusCard.key]}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
                 {pmrSiteNames.map((group) => {
                   const isExpanded = expandedExecutives[group.executive] !== false;
+                  const executiveSummary = executiveSummaries.find((item) => item.executive === group.executive) || { done: 0, pending: 0, overdue: 0 };
+                  const executiveCategorySummaries = executiveCategoryStatusSummaries.get(group.executive) || PMR_CATEGORY_BUCKETS.map((item) => ({ category: item.label, done: 0, pending: 0, overdue: 0 }));
                   return (
                     <div key={group.executive} style={{ display: "grid", gap: 10 }}>
-                      <button
-                        type="button"
-                        onClick={() => toggleExecutive(group.executive)}
-                        style={{
-                          padding: "12px 14px",
-                          borderRadius: 12,
-                          background: "#ffffff",
-                          border: `1px solid ${COLORS.panelEdge}`,
-                          boxShadow: "0 6px 18px rgba(16,36,62,0.06)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          cursor: "pointer",
-                          textAlign: "left",
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.navy }}>
-                            {group.executive}
+                      <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 12, background: "#ffffff", boxShadow: "0 6px 18px rgba(16,36,62,0.06)", padding: 10, display: "grid", gap: 10 }}>
+                        <button
+                          type="button"
+                          onClick={() => toggleExecutive(group.executive)}
+                          style={{
+                            padding: "4px 4px 2px",
+                            borderRadius: 8,
+                            background: "transparent",
+                            border: "none",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            cursor: "pointer",
+                            textAlign: "left",
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.navy }}>
+                              {group.executive}
+                            </div>
                           </div>
-                          <div style={{ marginTop: 6, fontSize: 12, fontWeight: 600, color: COLORS.textDim }}>
-                            {group.categories.map((categoryGroup) => `${categoryGroup.category} (${categoryGroup.sites.length})`).join(" • ")}
+                          <div style={{ fontSize: 16, color: COLORS.navy, fontWeight: 700 }}>
+                            {isExpanded ? "▾" : "▸"}
                           </div>
-                          <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            {(() => {
-                              const summary = executiveSummaries.find((item) => item.executive === group.executive);
-                              return summary ? (
-                                <>
-                                  <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.navy, background: "#eef5ff", padding: "3px 8px", borderRadius: 999 }}>
-                                    Done: {summary.done}
-                                  </span>
-                                  <span style={{ fontSize: 11, fontWeight: 700, color: "#b23a5a", background: "#fff0f4", padding: "3px 8px", borderRadius: 999 }}>
-                                    Pending: {summary.pending}
-                                  </span>
-                                  <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.navy, background: "#f4f7fb", padding: "3px 8px", borderRadius: 999 }}>
-                                    Overdue: {summary.overdue}
-                                  </span>
-                                </>
-                              ) : null;
-                            })()}
-                          </div>
+                        </button>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
+                          {[
+                            { key: "done", label: "Done", total: executiveSummary.done, titleColor: "#0f5132", cardBg: "#f3fbf6", edge: "#bee7cd", cellBg: "#e8f7ee" },
+                            { key: "pending", label: "Pending", total: executiveSummary.pending, titleColor: "#8a1c3a", cardBg: "#fff5f8", edge: "#f0bfd0", cellBg: "#ffeaf0" },
+                            { key: "overdue", label: "Overdue", total: executiveSummary.overdue, titleColor: "#7a3e00", cardBg: "#fff8ef", edge: "#f0d1a8", cellBg: "#fff0db" },
+                            { key: "totalSites", label: "Total Sites", total: executiveSummary.done + executiveSummary.pending + executiveSummary.overdue, titleColor: "#143f75", cardBg: "#f2f7ff", edge: "#b9d3f4", cellBg: "#e8f1ff" },
+                          ].map((statusCard) => (
+                            <div
+                              key={`${group.executive}-${statusCard.key}`}
+                              style={{
+                                padding: "10px 12px",
+                                borderRadius: 12,
+                                background: statusCard.cardBg,
+                                border: `1px solid ${statusCard.edge}`,
+                                boxShadow: "0 4px 12px rgba(16,36,62,0.05)",
+                                display: "grid",
+                                gap: 8,
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                                <div style={{ fontSize: 11, fontWeight: 800, color: statusCard.titleColor, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                                  {statusCard.label}
+                                </div>
+                                <div style={{ fontSize: 22, fontWeight: 900, color: statusCard.titleColor, lineHeight: 1 }}>
+                                  {statusCard.total}
+                                </div>
+                              </div>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
+                                {executiveCategorySummaries.map((item) => (
+                                  <div
+                                    key={`${group.executive}-${statusCard.key}-${item.category}`}
+                                    style={{
+                                      background: statusCard.cellBg,
+                                      border: `1px solid ${statusCard.edge}`,
+                                      borderRadius: 8,
+                                      padding: "6px 7px",
+                                      display: "grid",
+                                      gap: 3,
+                                    }}
+                                  >
+                                    <div style={{ fontSize: 9.5, fontWeight: 700, color: statusCard.titleColor, textTransform: "uppercase", letterSpacing: 0.2 }}>
+                                      {item.category}
+                                    </div>
+                                    <div style={{ fontSize: 14, fontWeight: 900, color: statusCard.titleColor, lineHeight: 1 }}>
+                                      {statusCard.key === "totalSites"
+                                        ? item.done + item.pending + item.overdue
+                                        : item[statusCard.key]}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <div style={{ fontSize: 16, color: COLORS.navy, fontWeight: 700 }}>
-                          {isExpanded ? "▾" : "▸"}
-                        </div>
-                      </button>
+                      </div>
                       {isExpanded && (
                         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                           {group.categories.map((categoryGroup) => {
@@ -1344,23 +1475,10 @@ useEffect(() => {
                         }).length;
                         return (
                           <div key={categoryGroup.category} style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 250, flex: 1, padding: "12px", borderRadius: 14, background: "#ffffff", border: `1px solid ${COLORS.panelEdge}`, boxShadow: "0 4px 14px rgba(16,36,62,0.05)" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <div style={{ fontSize: 12.5, fontWeight: 800, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.4 }}>
                                 {categoryGroup.category} ({categoryGroup.sites.length})
                               </div>
-                              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: COLORS.textDim }}>
-                                <span>Threshold</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="90"
-                                  step="1"
-                                  value={thresholdValue}
-                                  onChange={(event) => updateThresholdValue(categoryGroup.category, event.target.value)}
-                                  style={{ width: 48, border: `1px solid ${COLORS.panelEdge}`, borderRadius: 6, padding: "4px 6px", fontSize: 11, color: COLORS.text, background: "#fcfdff" }}
-                                />
-                                <span>days</span>
-                              </label>
                             </div>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "6px 0 2px", borderBottom: `1px solid ${COLORS.panelEdge}` }}>
                               <span style={{ fontSize: 11, fontWeight: 700, color: "#b23a5a" }}>Pending: {pendingCount}</span>
