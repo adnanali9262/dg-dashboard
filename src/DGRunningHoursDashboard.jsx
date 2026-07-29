@@ -7,11 +7,11 @@ import {
 import { parseWorkbook } from "./services/excelParser";
 import {
   Gauge, Fuel, AlertTriangle, Check,
-  Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays, Link2
+  Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays, Link2, ArrowUpRight, ArrowDownRight
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
-import { getDailyMeterReadings, getSummaryData, getFuelBalanceData, getPMRTrackingData } from "./api/googleSheets";
+import { getDailyMeterReadings, getSummaryData, getFuelBalanceData, getPMRTrackingData, getCPData } from "./api/googleSheets";
 
  import Card from "./components/Card";
 import { COLORS } from "./styles/colors";
@@ -416,6 +416,14 @@ export default function DGRunningHoursDashboard() {
   const [pmrData, setPmrData] = useState([]);
   const [pmrLoading, setPmrLoading] = useState(true);
   const [pmrError, setPmrError] = useState("");
+  const [cpData, setCpData] = useState([]);
+  const [cpLoading, setCpLoading] = useState(true);
+  const [cpError, setCpError] = useState("");
+  const [selectedCpManager, setSelectedCpManager] = useState("All");
+  const [selectedCpExecutive, setSelectedCpExecutive] = useState("All");
+  const [selectedCpMonth, setSelectedCpMonth] = useState("All");
+  const [selectedCpSiteType, setSelectedCpSiteType] = useState("All");
+  const [selectedCpSite, setSelectedCpSite] = useState("All");
   const [expandedExecutives, setExpandedExecutives] = useState({});
   const PMR_THRESHOLD_STORAGE_KEY = "pmr-category-thresholds";
   const [categoryThresholds, setCategoryThresholds] = useState(() => {
@@ -521,6 +529,22 @@ useEffect(() => {
       if (!cancelled) {
         setPmrError(err.message || "Could not load PMR tracking data.");
         setPmrLoading(false);
+      }
+    });
+
+  getCPData()
+    .then((data) => {
+      if (!cancelled) {
+        console.log("✓ Google Sheets CP Data loaded:", data?.length || 0, "records");
+        setCpData(Array.isArray(data) ? data : []);
+        setCpLoading(false);
+      }
+    })
+    .catch((err) => {
+      console.error("✗ Failed to load CP data:", err);
+      if (!cancelled) {
+        setCpError(err.message || "Could not load CP Data.");
+        setCpLoading(false);
       }
     });
 
@@ -632,6 +656,166 @@ useEffect(() => {
   const selectedUsageTotal = useMemo(() => {
     return Math.round(selectedUsageData.reduce((sum, item) => sum + item.hours, 0) * 100) / 100;
   }, [selectedUsageData]);
+
+  const electricityRows = useMemo(() => {
+    return cpData.map((row, index) => {
+      const year = String(row.Year || row.year || "").trim();
+      const units = Number(row.Units ?? row.units ?? 0) || 0;
+      return {
+        id: `${row["Reference No."] || row.Reference || index}`,
+        manager: normalizeSiteName(row.Manager || row.manager || ""),
+        executive: normalizeSiteName(row.Executive || row.executive || ""),
+        site: normalizeSiteName(row["Exchange location"] || row.exchangeLocation || row.Site || row.site || ""),
+        month: normalizeSiteName(row.Month || row.month || ""),
+        siteType: normalizeSiteName(row["Site type"] || row.siteType || row.Type || ""),
+        year,
+        units,
+      };
+    });
+  }, [cpData]);
+
+  const cpManagerOptions = useMemo(() => {
+    const options = new Set(electricityRows.map((row) => row.manager).filter(Boolean));
+    return ["All", ...[...options].sort((a, b) => a.localeCompare(b))];
+  }, [electricityRows]);
+
+  const cpExecutiveOptions = useMemo(() => {
+    const options = new Set(electricityRows.map((row) => row.executive).filter(Boolean));
+    return ["All", ...[...options].sort((a, b) => a.localeCompare(b))];
+  }, [electricityRows]);
+
+  const cpMonthOptions = useMemo(() => {
+    const options = new Set(electricityRows.map((row) => row.month).filter(Boolean));
+    return ["All", ...[...options].sort((a, b) => a.localeCompare(b))];
+  }, [electricityRows]);
+
+  const cpSiteTypeOptions = useMemo(() => {
+    const options = new Set(electricityRows.map((row) => row.siteType).filter(Boolean));
+    return ["All", ...[...options].sort((a, b) => a.localeCompare(b))];
+  }, [electricityRows]);
+
+  const cpSiteOptions = useMemo(() => {
+    const rowsBeforeSiteFilter = electricityRows.filter((row) => {
+      if (selectedCpManager !== "All" && row.manager !== selectedCpManager) return false;
+      if (selectedCpExecutive !== "All" && row.executive !== selectedCpExecutive) return false;
+      if (selectedCpMonth !== "All" && row.month !== selectedCpMonth) return false;
+      if (selectedCpSiteType !== "All" && row.siteType !== selectedCpSiteType) return false;
+      return true;
+    });
+
+    const options = new Set(rowsBeforeSiteFilter.map((row) => row.site).filter(Boolean));
+    return ["All", ...[...options].sort((a, b) => a.localeCompare(b))];
+  }, [electricityRows, selectedCpManager, selectedCpExecutive, selectedCpMonth, selectedCpSiteType]);
+
+  useEffect(() => {
+    if (!cpSiteOptions.includes(selectedCpSite)) {
+      setSelectedCpSite("All");
+    }
+  }, [cpSiteOptions, selectedCpSite]);
+
+  const filteredElectricityRows = useMemo(() => {
+    return electricityRows.filter((row) => {
+      if (selectedCpManager !== "All" && row.manager !== selectedCpManager) return false;
+      if (selectedCpExecutive !== "All" && row.executive !== selectedCpExecutive) return false;
+      if (selectedCpMonth !== "All" && row.month !== selectedCpMonth) return false;
+      if (selectedCpSiteType !== "All" && row.siteType !== selectedCpSiteType) return false;
+      if (selectedCpSite !== "All" && row.site !== selectedCpSite) return false;
+      return true;
+    });
+  }, [electricityRows, selectedCpManager, selectedCpExecutive, selectedCpMonth, selectedCpSiteType, selectedCpSite]);
+
+  const electricitySummary = useMemo(() => {
+    const monthTotals = new Map();
+    filteredElectricityRows.forEach((row) => {
+      const monthKey = row.month || "Unknown";
+      if (!monthTotals.has(monthKey)) {
+        monthTotals.set(monthKey, { y2025: 0, y2026: 0 });
+      }
+      const entry = monthTotals.get(monthKey);
+      if (row.year === "2025") entry.y2025 += row.units;
+      if (row.year === "2026") entry.y2026 += row.units;
+    });
+
+    const units2025 = [...monthTotals.values()].reduce((sum, item) => sum + item.y2025, 0);
+    const units2026 = [...monthTotals.values()].reduce((sum, item) => sum + item.y2026, 0);
+
+    const unitsDelta = units2026 - units2025;
+    const unitsDeltaPercent = units2025 === 0 ? null : (unitsDelta / units2025) * 100;
+
+    return {
+      units2025,
+      units2026,
+      unitsDelta,
+      unitsDeltaPercent,
+    };
+  }, [filteredElectricityRows]);
+
+  const siteTypeCounts = useMemo(() => {
+    const byType = new Map();
+    filteredElectricityRows.forEach((row) => {
+      const type = row.siteType || "Unknown";
+      if (!byType.has(type)) {
+        byType.set(type, new Set());
+      }
+      if (row.site) {
+        byType.get(type).add(row.site);
+      }
+    });
+
+    return [...byType.entries()]
+      .map(([siteType, sites]) => ({ siteType, count: sites.size }))
+      .sort((a, b) => (b.count - a.count) || a.siteType.localeCompare(b.siteType));
+  }, [filteredElectricityRows]);
+
+  const siteDeltas = useMemo(() => {
+    const siteMonthMap = new Map();
+
+    filteredElectricityRows.forEach((row) => {
+      const siteKey = row.site || "Unknown Site";
+      if (!siteMonthMap.has(siteKey)) {
+        siteMonthMap.set(siteKey, new Map());
+      }
+
+      const monthKey = row.month || "Unknown";
+      const monthMap = siteMonthMap.get(siteKey);
+      if (!monthMap.has(monthKey)) {
+        monthMap.set(monthKey, { y2025: 0, y2026: 0 });
+      }
+
+      const yearBucket = monthMap.get(monthKey);
+      if (row.year === "2025") yearBucket.y2025 += row.units;
+      if (row.year === "2026") yearBucket.y2026 += row.units;
+    });
+
+    return [...siteMonthMap.entries()].map(([site, monthMap]) => {
+      const delta = [...monthMap.values()].reduce((sum, value) => sum + (value.y2026 - value.y2025), 0);
+      return { site, delta: round2(delta) };
+    });
+  }, [filteredElectricityRows]);
+
+  const topIncreasedSites = useMemo(() => {
+    return siteDeltas
+      .filter((item) => item.delta > 0)
+      .sort((a, b) => (b.delta - a.delta) || a.site.localeCompare(b.site))
+      .slice(0, 10)
+      .map((item) => ({ name: item.site, units: round2(item.delta) }));
+  }, [siteDeltas]);
+
+  const topDecreasedSites = useMemo(() => {
+    return siteDeltas
+      .filter((item) => item.delta < 0)
+      .sort((a, b) => (a.delta - b.delta) || a.site.localeCompare(b.site))
+      .slice(0, 10)
+      .map((item) => ({ name: item.site, units: round2(Math.abs(item.delta)) }));
+  }, [siteDeltas]);
+
+  const resetElectricityFilters = useCallback(() => {
+    setSelectedCpManager("All");
+    setSelectedCpExecutive("All");
+    setSelectedCpMonth("All");
+    setSelectedCpSiteType("All");
+    setSelectedCpSite("All");
+  }, []);
 
   const pmrSiteNames = useMemo(() => {
     const entries = pmrData
@@ -1528,7 +1712,196 @@ useEffect(() => {
             )}
           </Card>
         )}
- 
+
+        {section === "electricity" && (
+          <>
+            <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 16, padding: 14, background: "linear-gradient(140deg, #f9fbff 0%, #f3f8ff 45%, #f9fcff 100%)", boxShadow: "0 8px 24px rgba(16,36,62,0.06)", marginBottom: 18, display: "grid", gap: 14 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                  Electricity Performance Studio
+                </div>
+                <div style={{ fontSize: 11.5, color: COLORS.textDim, fontFamily: "IBM Plex Mono" }}>
+                  {cpLoading ? "Syncing CP Data..." : `Rows: ${filteredElectricityRows.length}${selectedCpSite !== "All" ? ` | Site: ${selectedCpSite}` : ""}`}
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, alignItems: "start" }}>
+                <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 12, background: "#ffffff", padding: 12, boxShadow: "0 4px 12px rgba(16,36,62,0.04)", display: "grid", gap: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45 }}>
+                    Filters
+                  </div>
+
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <label style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
+                      <span>Manager</span>
+                      <select value={selectedCpManager} onChange={(event) => setSelectedCpManager(event.target.value)} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: COLORS.text, background: COLORS.panelSoft }}>
+                        {cpManagerOptions.map((option) => (
+                          <option key={`manager-${option}`} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
+                      <span>Executive</span>
+                      <select value={selectedCpExecutive} onChange={(event) => setSelectedCpExecutive(event.target.value)} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: COLORS.text, background: COLORS.panelSoft }}>
+                        {cpExecutiveOptions.map((option) => (
+                          <option key={`executive-${option}`} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
+                      <span>Month</span>
+                      <select value={selectedCpMonth} onChange={(event) => setSelectedCpMonth(event.target.value)} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: COLORS.text, background: COLORS.panelSoft }}>
+                        {cpMonthOptions.map((option) => (
+                          <option key={`month-${option}`} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
+                      <span>Site Type</span>
+                      <select value={selectedCpSiteType} onChange={(event) => setSelectedCpSiteType(event.target.value)} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: COLORS.text, background: COLORS.panelSoft }}>
+                        {cpSiteTypeOptions.map((option) => (
+                          <option key={`site-type-${option}`} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
+                      <span>Site</span>
+                      <select value={selectedCpSite} onChange={(event) => setSelectedCpSite(event.target.value)} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: COLORS.text, background: COLORS.panelSoft }}>
+                        {cpSiteOptions.map((option) => (
+                          <option key={`site-${option}`} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={resetElectricityFilters}
+                    style={{
+                      marginTop: 2,
+                      border: `1px solid ${COLORS.panelEdge}`,
+                      borderRadius: 8,
+                      padding: "9px 11px",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: COLORS.navy,
+                      background: "linear-gradient(180deg, #eef5ff 0%, #e5efff 100%)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Reset All Filters
+                  </button>
+                </div>
+
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
+                    <StatCard icon={Activity} label="Units 2025" value={round2(electricitySummary.units2025).toFixed(2)} tone="navy" />
+                    <StatCard icon={Gauge} label="Units 2026" value={round2(electricitySummary.units2026).toFixed(2)} tone="blue" />
+                    <StatCard
+                      icon={electricitySummary.unitsDelta >= 0 ? ArrowUpRight : ArrowDownRight}
+                      label="Inc/Dec Units"
+                      value={`${electricitySummary.unitsDelta >= 0 ? "↑" : "↓"} ${round2(Math.abs(electricitySummary.unitsDelta)).toFixed(2)}`}
+                      sub={electricitySummary.unitsDelta >= 0 ? "Increase" : "Decrease"}
+                      tone={electricitySummary.unitsDelta >= 0 ? "green" : "red"}
+                    />
+                    <StatCard
+                      icon={electricitySummary.unitsDeltaPercent === null ? Activity : electricitySummary.unitsDeltaPercent >= 0 ? ArrowUpRight : ArrowDownRight}
+                      label="Inc/Dec %"
+                      value={electricitySummary.unitsDeltaPercent === null
+                        ? "—"
+                        : `${electricitySummary.unitsDeltaPercent >= 0 ? "↑" : "↓"} ${round2(Math.abs(electricitySummary.unitsDeltaPercent)).toFixed(2)}%`}
+                      sub={electricitySummary.unitsDeltaPercent === null ? "No 2025 baseline" : electricitySummary.unitsDeltaPercent >= 0 ? "Increase" : "Decrease"}
+                      tone={electricitySummary.unitsDeltaPercent === null
+                        ? "navy"
+                        : electricitySummary.unitsDeltaPercent >= 0
+                          ? "green"
+                          : "red"}
+                    />
+                  </div>
+
+                  <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 12, background: "#ffffff", padding: "10px 12px", boxShadow: "0 3px 10px rgba(16,36,62,0.04)", display: "grid", gap: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45 }}>
+                      Site Type Mix (Filtered)
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {siteTypeCounts.length > 0 ? siteTypeCounts.map((item) => (
+                        <div key={`site-type-count-${item.siteType}`} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, padding: "5px 10px", background: COLORS.panelSoft, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 11.5, fontWeight: 700, color: COLORS.navy }}>{item.siteType}</span>
+                          <span style={{ fontSize: 11.5, fontWeight: 800, color: COLORS.blue, fontFamily: "IBM Plex Mono" }}>{item.count}</span>
+                        </div>
+                      )) : (
+                        <span style={{ fontSize: 12, color: COLORS.textDim }}>No site types found for current filters.</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 14, marginBottom: 20 }}>
+              <Card title="Top 10 Sites - Increased Units" desc="Month-paired comparison: Jan 2025 vs Jan 2026, Feb vs Feb, Mar vs Mar">
+                {topIncreasedSites.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={Math.max(260, topIncreasedSites.length * 26)}>
+                    <BarChart data={topIncreasedSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
+                      <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
+                      <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
+                      <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<CustomTooltip unit="units" />} />
+                      <Bar dataKey="units" name="Increase" fill={COLORS.green} radius={[0, 4, 4, 0]}>
+                        <LabelList dataKey="units" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div style={{ padding: "24px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                    No site increases found for current filters.
+                  </div>
+                )}
+              </Card>
+
+              <Card title="Top 10 Sites - Decreased Units" desc="Month-paired comparison: Jan 2025 vs Jan 2026, Feb vs Feb, Mar vs Mar">
+                {topDecreasedSites.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={Math.max(260, topDecreasedSites.length * 26)}>
+                    <BarChart data={topDecreasedSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
+                      <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
+                      <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
+                      <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<CustomTooltip unit="units" />} />
+                      <Bar dataKey="units" name="Decrease" fill={COLORS.red} radius={[0, 4, 4, 0]}>
+                        <LabelList dataKey="units" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div style={{ padding: "24px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                    No site decreases found for current filters.
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            <Card title="Electricity performance" desc="Units comparison from CP Data" style={{ marginBottom: 0 }}>
+              {cpLoading ? (
+                <div style={{ padding: "30px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                  Loading CP Data from Google Sheets...
+                </div>
+              ) : cpError ? (
+                <div style={{ padding: "30px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                  {cpError}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12.5, color: COLORS.textDim }}>
+                  Showing {filteredElectricityRows.length} CP records after filters{selectedCpSite !== "All" ? ` for ${selectedCpSite}` : ""}. Cards and charts use month-paired year comparison (2025 vs 2026).
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
         {section === "repair" && (
           <RepairHistorySection
             repairs={repairs}

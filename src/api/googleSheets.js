@@ -96,6 +96,7 @@ export async function getSummaryData() {
 
 const FUEL_BALANCE_SHEET_NAMES = ["Fuel Balance", "Fuel_Balance", "DG Fuel Balance", "Fuel"];
 const PMR_SHEET_NAMES = ["PMR Tracking", "PMR_Tracking", "PMR"];
+const CP_SHEET_NAMES = ["CP Data", "CP_Data", "CP", "CPDATA"];
 
 function getHeaderIndex(headers, patterns) {
   return headers.findIndex((header) => {
@@ -249,6 +250,53 @@ export async function getPMRTrackingData() {
     return [];
   } catch (error) {
     console.error("✗ Error in getPMRTrackingData:", error);
+    return [];
+  }
+}
+
+function parseCPRows(payload) {
+  if (payload?.error) {
+    throw new Error(payload.error);
+  }
+
+  const data = Array.isArray(payload) ? payload : payload?.data || payload?.value || [];
+  if (!Array.isArray(data) || data.length === 0) return [];
+
+  // If Apps Script already returns row objects, pass through as-is.
+  if (!Array.isArray(data[0])) {
+    return data;
+  }
+
+  // Convert 2D array to objects using row 1 as headers.
+  const headers = data[0].map((header) => String(header || "").trim());
+  return data.slice(1)
+    .filter((row) => Array.isArray(row) && row.some((cell) => String(cell || "").trim() !== ""))
+    .map((row) => {
+      const item = {};
+      headers.forEach((header, index) => {
+        if (header) item[header] = row[index];
+      });
+      return item;
+    });
+}
+
+export async function getCPData() {
+  try {
+    for (const sheetName of CP_SHEET_NAMES) {
+      const response = await fetch(
+        `${API_URL}?action=getData&sheet=${encodeURIComponent(sheetName)}`
+      );
+
+      if (!response.ok) continue;
+
+      const payload = await response.json();
+      const rows = parseCPRows(payload);
+      if (rows.length > 0) return rows;
+    }
+
+    return [];
+  } catch (error) {
+    console.error("✗ Error in getCPData:", error);
     return [];
   }
 }
