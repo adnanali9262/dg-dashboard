@@ -739,7 +739,9 @@ useEffect(() => {
     const units2025 = [...monthTotals.values()].reduce((sum, item) => sum + item.y2025, 0);
     const units2026 = [...monthTotals.values()].reduce((sum, item) => sum + item.y2026, 0);
 
-    const unitsDelta = units2026 - units2025;
+    // Top-card comparison basis requested: 2025 - 2026
+    // Positive delta means units decreased in 2026 (good), negative means increased (bad).
+    const unitsDelta = units2025 - units2026;
     const unitsDeltaPercent = units2025 === 0 ? null : (unitsDelta / units2025) * 100;
 
     return {
@@ -788,25 +790,26 @@ useEffect(() => {
     });
 
     return [...siteMonthMap.entries()].map(([site, monthMap]) => {
-      const delta = [...monthMap.values()].reduce((sum, value) => sum + (value.y2026 - value.y2025), 0);
+      // Site-level comparison basis aligned with top cards: 2025 - 2026
+      const delta = [...monthMap.values()].reduce((sum, value) => sum + (value.y2025 - value.y2026), 0);
       return { site, delta: round2(delta) };
     });
   }, [filteredElectricityRows]);
 
   const topIncreasedSites = useMemo(() => {
     return siteDeltas
-      .filter((item) => item.delta > 0)
-      .sort((a, b) => (b.delta - a.delta) || a.site.localeCompare(b.site))
+      .filter((item) => item.delta < 0)
+      .sort((a, b) => (a.delta - b.delta) || a.site.localeCompare(b.site))
       .slice(0, 10)
       .map((item) => ({ name: item.site, units: round2(item.delta) }));
   }, [siteDeltas]);
 
   const topDecreasedSites = useMemo(() => {
     return siteDeltas
-      .filter((item) => item.delta < 0)
-      .sort((a, b) => (a.delta - b.delta) || a.site.localeCompare(b.site))
+      .filter((item) => item.delta > 0)
+      .sort((a, b) => (b.delta - a.delta) || a.site.localeCompare(b.site))
       .slice(0, 10)
-      .map((item) => ({ name: item.site, units: round2(Math.abs(item.delta)) }));
+      .map((item) => ({ name: item.site, units: round2(item.delta) }));
   }, [siteDeltas]);
 
   const resetElectricityFilters = useCallback(() => {
@@ -1725,8 +1728,8 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, alignItems: "start" }}>
-                <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 12, background: "#ffffff", padding: 12, boxShadow: "0 4px 12px rgba(16,36,62,0.04)", display: "grid", gap: 10 }}>
+              <div style={{ display: "flex", gap: 14, alignItems: "start", flexWrap: "wrap" }}>
+                <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 12, background: "#ffffff", padding: 10, boxShadow: "0 4px 12px rgba(16,36,62,0.04)", display: "grid", gap: 8, width: 210, flex: "0 0 210px" }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45 }}>
                     Filters
                   </div>
@@ -1797,29 +1800,35 @@ useEffect(() => {
                   </button>
                 </div>
 
-                <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "grid", gap: 12, flex: "1 1 640px", minWidth: 0 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
                     <StatCard icon={Activity} label="Units 2025" value={round2(electricitySummary.units2025).toFixed(2)} tone="navy" />
                     <StatCard icon={Gauge} label="Units 2026" value={round2(electricitySummary.units2026).toFixed(2)} tone="blue" />
                     <StatCard
-                      icon={electricitySummary.unitsDelta >= 0 ? ArrowUpRight : ArrowDownRight}
+                      icon={electricitySummary.unitsDelta >= 0 ? ArrowDownRight : ArrowUpRight}
                       label="Inc/Dec Units"
-                      value={`${electricitySummary.unitsDelta >= 0 ? "↑" : "↓"} ${round2(Math.abs(electricitySummary.unitsDelta)).toFixed(2)}`}
-                      sub={electricitySummary.unitsDelta >= 0 ? "Increase" : "Decrease"}
+                      value={`${electricitySummary.unitsDelta >= 0 ? "↓" : "↑"} ${round2(electricitySummary.unitsDelta).toFixed(2)}`}
+                      sub={electricitySummary.unitsDelta >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
                       tone={electricitySummary.unitsDelta >= 0 ? "green" : "red"}
+                      valueColor={electricitySummary.unitsDelta >= 0 ? COLORS.green : COLORS.red}
                     />
                     <StatCard
-                      icon={electricitySummary.unitsDeltaPercent === null ? Activity : electricitySummary.unitsDeltaPercent >= 0 ? ArrowUpRight : ArrowDownRight}
+                      icon={electricitySummary.unitsDeltaPercent === null ? Activity : electricitySummary.unitsDeltaPercent >= 0 ? ArrowDownRight : ArrowUpRight}
                       label="Inc/Dec %"
                       value={electricitySummary.unitsDeltaPercent === null
                         ? "—"
-                        : `${electricitySummary.unitsDeltaPercent >= 0 ? "↑" : "↓"} ${round2(Math.abs(electricitySummary.unitsDeltaPercent)).toFixed(2)}%`}
-                      sub={electricitySummary.unitsDeltaPercent === null ? "No 2025 baseline" : electricitySummary.unitsDeltaPercent >= 0 ? "Increase" : "Decrease"}
+                        : `${electricitySummary.unitsDeltaPercent >= 0 ? "↓" : "↑"} ${round2(electricitySummary.unitsDeltaPercent).toFixed(2)}%`}
+                      sub={electricitySummary.unitsDeltaPercent === null ? "No 2025 baseline" : electricitySummary.unitsDeltaPercent >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
                       tone={electricitySummary.unitsDeltaPercent === null
                         ? "navy"
                         : electricitySummary.unitsDeltaPercent >= 0
                           ? "green"
                           : "red"}
+                      valueColor={electricitySummary.unitsDeltaPercent === null
+                        ? COLORS.text
+                        : electricitySummary.unitsDeltaPercent >= 0
+                          ? COLORS.green
+                          : COLORS.red}
                     />
                   </div>
 
@@ -1843,15 +1852,16 @@ useEffect(() => {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 14, marginBottom: 20 }}>
-              <Card title="Top 10 Sites - Increased Units" desc="Month-paired comparison: Jan 2025 vs Jan 2026, Feb vs Feb, Mar vs Mar">
+              <Card title="Top 10 Sites - Increased Units (Bad)" desc="Month-paired comparison (2025 - 2026): negatives show increases">
                 {topIncreasedSites.length > 0 ? (
                   <ResponsiveContainer width="100%" height={Math.max(260, topIncreasedSites.length * 26)}>
                     <BarChart data={topIncreasedSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
                       <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
                       <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
                       <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
+                      <ReferenceLine x={0} stroke={COLORS.panelEdge} />
                       <Tooltip content={<CustomTooltip unit="units" />} />
-                      <Bar dataKey="units" name="Increase" fill={COLORS.green} radius={[0, 4, 4, 0]}>
+                      <Bar dataKey="units" name="Increase (Bad)" fill={COLORS.red} radius={[0, 4, 4, 0]}>
                         <LabelList dataKey="units" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
                       </Bar>
                     </BarChart>
@@ -1863,15 +1873,16 @@ useEffect(() => {
                 )}
               </Card>
 
-              <Card title="Top 10 Sites - Decreased Units" desc="Month-paired comparison: Jan 2025 vs Jan 2026, Feb vs Feb, Mar vs Mar">
+              <Card title="Top 10 Sites - Decreased Units (Good)" desc="Month-paired comparison (2025 - 2026): positives show decreases">
                 {topDecreasedSites.length > 0 ? (
                   <ResponsiveContainer width="100%" height={Math.max(260, topDecreasedSites.length * 26)}>
                     <BarChart data={topDecreasedSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
                       <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
                       <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
                       <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
+                      <ReferenceLine x={0} stroke={COLORS.panelEdge} />
                       <Tooltip content={<CustomTooltip unit="units" />} />
-                      <Bar dataKey="units" name="Decrease" fill={COLORS.red} radius={[0, 4, 4, 0]}>
+                      <Bar dataKey="units" name="Decrease (Good)" fill={COLORS.green} radius={[0, 4, 4, 0]}>
                         <LabelList dataKey="units" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
                       </Bar>
                     </BarChart>

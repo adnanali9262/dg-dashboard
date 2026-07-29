@@ -1,11 +1,13 @@
 import { COLORS } from "../styles/colors";
 
-export default function StatCard({ icon: Icon, label, value, sub, tone = "red" }) {
+export default function StatCard({ icon: Icon, label, value, sub, tone = "red", valueColor }) {
   const tint =
     tone === "red" ? COLORS.red :
     tone === "green" ? COLORS.green :
     tone === "blue" ? COLORS.blue :
     COLORS.navy;
+
+  const resolvedValueColor = valueColor || COLORS.text;
 
   return (
     <div
@@ -56,7 +58,7 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = "red" }
           style={{
             fontSize: 22,
             fontWeight: 700,
-            color: COLORS.text,
+            color: resolvedValueColor,
             lineHeight: 1.05,
             letterSpacing: 0,
           }}
