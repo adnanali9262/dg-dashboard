@@ -7,7 +7,7 @@ import {
 import { parseWorkbook } from "./services/excelParser";
 import {
   Gauge, Fuel, AlertTriangle, Check,
-  Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays, Link2, ArrowUpRight, ArrowDownRight
+  Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays, Link2, ArrowUpRight, ArrowDownRight, RotateCcw
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
@@ -106,140 +106,20 @@ function getPmDateStatus(pmDate, thresholdDays) {
 
 function findSiteConsumption(fuelBalanceDerived, siteName) {
   if (!fuelBalanceDerived) return 0;
-
   const key = siteMatchKey(siteName);
-  if (fuelBalanceDerived.consumptionBySite.has(key)) {
-    return fuelBalanceDerived.consumptionBySite.get(key);
-  }
-
-  const match = fuelBalanceDerived.consumptionSites.find((site) => {
-    return key.includes(site.key) || site.key.includes(key);
-  });
-
-  return match ? match.perHourFuelConsumption : 0;
-}
- 
-// --- Parsing -----------------------------------------------------------
-// Reads the "Daily Difference" (running hours) columns AND the "POL Filled"
-// (fuel topped up) columns that sit alongside them in the same meter-reading
-// template, so one upload feeds both the Usage and Fuel Balance sections.
-
- 
-// --- Derived series ------------------------------------------------------
-function useDerived(parsed) {
-  return useMemo(() => {
-    if (!parsed) return null;
-    const { days, sites } = parsed;
-    const active = sites.filter((s) => !s.faulty);
- 
-    const daily = days.map((day, i) => {
-      let sum = 0, n = 0;
-      active.forEach((s) => {
-        const v = s.readings[i];
-        if (v !== null) { sum += v; n++; }
-      });
-      return { day: `D${day}`, totalHours: n ? Math.round(sum * 10) / 10 : null };
-    });
- 
-    const totals = active.map((s) => {
-      const vals = s.readings.filter((v) => v !== null);
-      const sum = vals.reduce((a, b) => a + b, 0);
-      return { name: s.name, total: Math.round(sum * 10) / 10, days: vals.length };
-    }).sort((a, b) => b.total - a.total);
- 
-    const monthTotal = Math.round(totals.reduce((a, s) => a + s.total, 0) * 10) / 10;
-    const faultyCount = sites.length - active.length;
- 
-    return { daily, totals, monthTotal, activeCount: active.length, faultyCount, siteNames: active.map((s) => s.name) };
-  }, [parsed]);
-}
- function useSheetSummary(sheetData) {
-  return useMemo(() => {
-    if (!sheetData || sheetData.length === 0) return null;
-
-    // Total DGs (unique DG names)
-    const totalSites = sheetData.length;
-
-    // Count working vs faulty DGs based on status field
-    const workingDGs = sheetData.filter(item =>
-      /working/i.test(item.status || "")
-    ).length;
-    
-    const faultyDGCount = sheetData.filter(item =>
-      /faulty/i.test(item.status || "")
-    ).length;
-
-    // Summary by capacity
-    const capacityGroups = {};
-    sheetData.forEach(item => {
-      const capacity = item.capacity || "Unknown";
-      capacityGroups[capacity] = (capacityGroups[capacity] || 0) + 1;
-    });
-
-    // Engine manufacturer summary
-    const engineSummary = {};
-    sheetData.forEach(item => {
-      const engine = item.engine || "Unknown";
-      engineSummary[engine] = (engineSummary[engine] || 0) + 1;
-    });
-    
-    const topEngineManufacturer = Object.entries(engineSummary).sort((a, b) => b[1] - a[1])[0] || ["Unknown", 0];
-
-    return {
-      totalSites,
-      lifetimeHours: 0,
-      todayHours: 0,
-      monthlyHours: 0,
-      faultyDGs: faultyDGCount,
-      totalFuelAvailable: 0,
-      workingDGs,
-      faultyDGCount,
-      capacityGroups,
-      topEngineManufacturer: topEngineManufacturer[0],
-      topEngineCount: topEngineManufacturer[1]
-    };
-
-  }, [sheetData]);
-}
-function useFuelDerived(parsed) {
-  return useMemo(() => {
-    if (!parsed) return null;
-    const { days, sites } = parsed;
-    const active = sites.filter((s) => !s.faulty);
- 
-    const daily = days.map((day, i) => {
-      let sum = 0, n = 0;
-      active.forEach((s) => {
-        const v = s.fuel[i];
-        if (v !== null) { sum += v; n++; }
-      });
-      return { day: `D${day}`, totalFuel: n ? Math.round(sum * 10) / 10 : null };
-    });
- 
-    const totals = active.map((s) => {
-      const vals = s.fuel.filter((v) => v !== null);
-      const sum = vals.reduce((a, b) => a + b, 0);
-      return { name: s.name, total: Math.round(sum * 10) / 10, fills: vals.length };
-    }).filter((s) => s.total > 0).sort((a, b) => b.total - a.total);
- 
-    const monthTotal = Math.round(totals.reduce((a, s) => a + s.total, 0) * 10) / 10;
- 
-    return { daily, totals, monthTotal, siteNames: active.map((s) => s.name) };
-  }, [parsed]);
+  if (!key) return 0;
+  return fuelBalanceDerived.consumptionBySite.get(key) || 0;
 }
 
-// --- Derived series for the "Fuel Balance" Google Sheet --------------------
 function useFuelBalanceDerived(fuelBalanceData) {
   return useMemo(() => {
-    if (!fuelBalanceData || fuelBalanceData.length === 0) return null;
-
-    const totals = fuelBalanceData
-      .map((row) => ({
-        name: normalizeSiteName(row.site || ""),
-        fuelBalance: Number(row.fuelBalance || 0),
-        perHourFuelConsumption: Number(row.perHourFuelConsumption || 0),
+    const totals = (Array.isArray(fuelBalanceData) ? fuelBalanceData : [])
+      .map((item) => ({
+        name: normalizeSiteName(item.name || item.site || item.siteName || item["Site Name"] || ""),
+        fuelBalance: Number(item.fuelBalance ?? item.fuel_balance ?? item["Fuel Balance"] ?? 0) || 0,
+        perHourFuelConsumption: Number(item.perHourFuelConsumption ?? item.per_hour_fuel_consumption ?? item["Per Hour Fuel Consumption"] ?? 0) || 0,
       }))
-      .filter((s) => s.name)
+      .filter((site) => site.name)
       .sort((a, b) => b.fuelBalance - a.fuelBalance);
 
     const grandTotal = Math.round(totals.reduce((a, s) => a + s.fuelBalance, 0) * 100) / 100;
@@ -262,6 +142,114 @@ function useFuelBalanceDerived(fuelBalanceData) {
       siteNames: totals.map((s) => s.name),
     };
   }, [fuelBalanceData]);
+}
+
+function useDerived(parsed) {
+  return useMemo(() => {
+    if (!parsed || !Array.isArray(parsed.days) || !Array.isArray(parsed.sites)) {
+      return null;
+    }
+
+    const daily = parsed.days.map((day, index) => {
+      const totalHours = round2(
+        parsed.sites.reduce((sum, site) => sum + (Number(site?.readings?.[index] ?? 0) || 0), 0)
+      );
+      return { day: `D${day}`, totalHours };
+    });
+
+    const totals = parsed.sites
+      .map((site) => ({
+        name: normalizeSiteName(site?.name || ""),
+        total: round2((site?.readings || []).reduce((sum, value) => sum + (Number(value ?? 0) || 0), 0)),
+      }))
+      .filter((site) => site.name)
+      .sort((a, b) => (b.total - a.total) || a.name.localeCompare(b.name));
+
+    return {
+      daily,
+      totals,
+      siteNames: totals.map((site) => site.name),
+    };
+  }, [parsed]);
+}
+
+function useFuelDerived(parsed) {
+  return useMemo(() => {
+    if (!parsed || !Array.isArray(parsed.days) || !Array.isArray(parsed.sites)) {
+      return null;
+    }
+
+    const daily = parsed.days.map((day, index) => {
+      const totalFuel = round2(
+        parsed.sites.reduce((sum, site) => sum + (Number(site?.fuel?.[index] ?? 0) || 0), 0)
+      );
+      return { day: `D${day}`, totalFuel };
+    });
+
+    const totals = parsed.sites
+      .map((site) => ({
+        name: normalizeSiteName(site?.name || ""),
+        total: round2((site?.fuel || []).reduce((sum, value) => sum + (Number(value ?? 0) || 0), 0)),
+      }))
+      .filter((site) => site.name && site.total > 0)
+      .sort((a, b) => (b.total - a.total) || a.name.localeCompare(b.name));
+
+    const monthTotal = round2(totals.reduce((sum, site) => sum + site.total, 0));
+
+    return {
+      daily,
+      totals,
+      monthTotal,
+      siteNames: totals.map((site) => site.name),
+    };
+  }, [parsed]);
+}
+
+function useSheetSummary(sheetData) {
+  return useMemo(() => {
+    const rows = Array.isArray(sheetData) ? sheetData : [];
+    if (rows.length === 0) return null;
+
+    const names = new Set();
+    let workingDGs = 0;
+
+    rows.forEach((row, index) => {
+      const siteName = normalizeSiteName(
+        row?.site ||
+        row?.name ||
+        row?.exchange ||
+        row?.["Exchange Name"] ||
+        row?.["Site Name"] ||
+        row?.["Exchange location"] ||
+        `site-${index}`
+      );
+
+      if (siteName) names.add(siteName);
+
+      const statusRaw = String(
+        row?.status ||
+        row?.dgStatus ||
+        row?.["DG Status"] ||
+        row?.working ||
+        ""
+      ).trim().toLowerCase();
+
+      const isWorking = statusRaw
+        ? (statusRaw.includes("working") || statusRaw === "ok" || statusRaw === "yes" || statusRaw === "true" || statusRaw === "1")
+        : Number(row?.dailyHours || row?.runHours || row?.["Run Hours"] || 0) > 0;
+
+      if (isWorking) workingDGs += 1;
+    });
+
+    const totalSites = names.size || rows.length;
+    const faultyDGCount = Math.max(0, totalSites - workingDGs);
+
+    return {
+      totalSites,
+      workingDGs,
+      faultyDGCount,
+    };
+  }, [sheetData]);
 }
  
 // --- Persistence (works inside claude.ai AND on a deployed Netlify site) --
@@ -1136,7 +1124,7 @@ useEffect(() => {
     pmr: { title: "PMR Tracking", desc: "Live site names from the PMR Tracking Google Sheet", icon: ClipboardList },
     repair: { title: "DG Repair History", desc: "Log and track generator repairs, spares used, and status", icon: Wrench },
     sheets: { title: "Google Sheets", desc: "Open the live workbook directly", icon: Link2 },
-    electricity: { title: "Electricity Performance", desc: "Coming soon", icon: Activity },
+    electricity: { title: "Electricity Performance", desc: "", icon: Activity },
     fuelperf: { title: "Fuel Performance", desc: "Coming soon", icon: Fuel },
     contact: { title: "Contact", desc: "Coming soon", icon: ClipboardList },
   }[section] || {
@@ -1719,21 +1707,9 @@ useEffect(() => {
         {section === "electricity" && (
           <>
             <div className="electricity-layout">
-              <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 18, padding: 18, background: "linear-gradient(145deg, #f8fbff 0%, #eef4fb 42%, #f9fcff 100%)", boxShadow: "0 10px 28px rgba(16,36,62,0.08)" }}>
+              <div>
                 <div className="electricity-topbar">
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.65 }}>
-                      Electricity Performance Studio
-                    </div>
-                    <div style={{ marginTop: 5, fontSize: 12.5, color: COLORS.textDim, lineHeight: 1.35 }}>
-                      Compare 2025 against 2026 with a filter-first layout and stronger contrast for fast scanning.
-                    </div>
-                  </div>
-
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, background: "rgba(255,255,255,0.88)", padding: "6px 10px", fontSize: 11.5, color: COLORS.navy, fontWeight: 700, boxShadow: COLORS.shadowSoft }}>
-                      {cpLoading ? "Syncing CP Data..." : `${filteredElectricityRows.length} rows visible`}
-                    </div>
                     {selectedCpSite !== "All" && (
                       <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, background: "rgba(255,255,255,0.88)", padding: "6px 10px", fontSize: 11.5, color: COLORS.blue, fontWeight: 700, boxShadow: COLORS.shadowSoft }}>
                         Site: {selectedCpSite}
@@ -1742,71 +1718,19 @@ useEffect(() => {
                   </div>
                 </div>
 
-                <div className="electricity-shell" style={{ marginTop: 16 }}>
-                  <aside className="electricity-panel" style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 16, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.96) 100%)", padding: 14, boxShadow: "0 8px 20px rgba(16,36,62,0.06)", display: "grid", gap: 12 }}>
-                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                      <div style={{ fontSize: 11.5, fontWeight: 900, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45 }}>
-                        Filters
-                      </div>
-                      <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: "IBM Plex Mono" }}>
-                        Active controls
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {[
-                        { label: "Manager", value: selectedCpManager, onChange: setSelectedCpManager, options: cpManagerOptions },
-                        { label: "Executive", value: selectedCpExecutive, onChange: setSelectedCpExecutive, options: cpExecutiveOptions },
-                        { label: "Month", value: selectedCpMonth, onChange: setSelectedCpMonth, options: cpMonthOptions },
-                        { label: "Site Type", value: selectedCpSiteType, onChange: setSelectedCpSiteType, options: cpSiteTypeOptions },
-                        { label: "Site", value: selectedCpSite, onChange: setSelectedCpSite, options: cpSiteOptions },
-                      ].map((filter) => (
-                        <label key={filter.label} style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
-                          <span style={{ fontWeight: 700, color: COLORS.navy }}>{filter.label}</span>
-                          <select
-                            value={filter.value}
-                            onChange={(event) => filter.onChange(event.target.value)}
-                            style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 10, padding: "9px 10px", fontSize: 12.5, color: COLORS.text, background: "#ffffff", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)" }}
-                          >
-                            {filter.options.map((option) => (
-                              <option key={`${filter.label.toLowerCase()}-${option}`} value={option}>{option}</option>
-                            ))}
-                          </select>
-                        </label>
-                      ))}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={resetElectricityFilters}
-                      style={{
-                        marginTop: 2,
-                        border: `1px solid ${COLORS.blueSoft}`,
-                        borderRadius: 10,
-                        padding: "10px 12px",
-                        fontSize: 12.5,
-                        fontWeight: 900,
-                        color: COLORS.navy,
-                        background: "linear-gradient(180deg, #eff5ff 0%, #e2ecfb 100%)",
-                        cursor: "pointer",
-                        boxShadow: COLORS.shadowSoft,
-                      }}
-                    >
-                      Reset All Filters
-                    </button>
-                  </aside>
-
-                  <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
-                      <StatCard icon={Activity} label="Units 2025" value={round2(electricitySummary.units2025).toFixed(2)} tone="navy" />
-                      <StatCard icon={Gauge} label="Units 2026" value={round2(electricitySummary.units2026).toFixed(2)} tone="blue" />
+                <div className="electricity-shell" style={{ marginTop: 8 }}>
+                  <div style={{ display: "grid", gap: 10, minWidth: 0, marginTop: -2 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
+                      <StatCard icon={Activity} label="Units 2025" value={Math.round(electricitySummary.units2025).toLocaleString("en-US")} tone="navy" compact />
+                      <StatCard icon={Gauge} label="Units 2026" value={Math.round(electricitySummary.units2026).toLocaleString("en-US")} tone="blue" compact />
                       <StatCard
                         icon={electricitySummary.unitsDelta >= 0 ? ArrowDownRight : ArrowUpRight}
                         label="Inc/Dec Units"
-                        value={`${electricitySummary.unitsDelta >= 0 ? "↓" : "↑"} ${round2(electricitySummary.unitsDelta).toFixed(2)}`}
+                        value={`${electricitySummary.unitsDelta >= 0 ? "↓" : "↑"} ${Math.round(electricitySummary.unitsDelta).toLocaleString("en-US")}`}
                         sub={electricitySummary.unitsDelta >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
                         tone={electricitySummary.unitsDelta >= 0 ? "green" : "red"}
                         valueColor={electricitySummary.unitsDelta >= 0 ? COLORS.green : COLORS.red}
+                        compact
                       />
                       <StatCard
                         icon={electricitySummary.unitsDeltaPercent === null ? Activity : electricitySummary.unitsDeltaPercent >= 0 ? ArrowDownRight : ArrowUpRight}
@@ -1825,30 +1749,76 @@ useEffect(() => {
                           : electricitySummary.unitsDeltaPercent >= 0
                             ? COLORS.green
                             : COLORS.red}
+                        compact
                       />
                     </div>
-
-                    <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 16, background: "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,250,254,0.98) 100%)", padding: "12px 14px", boxShadow: "0 6px 16px rgba(16,36,62,0.05)", display: "grid", gap: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                        <div style={{ fontSize: 11.5, fontWeight: 900, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45 }}>
-                          Site Type Mix
-                        </div>
-                        <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: "IBM Plex Mono" }}>
-                          Filtered breakdown
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {siteTypeCounts.length > 0 ? siteTypeCounts.map((item) => (
-                          <div key={`site-type-count-${item.siteType}`} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, padding: "6px 11px", background: COLORS.panelSoft, display: "inline-flex", alignItems: "center", gap: 7 }}>
-                            <span style={{ fontSize: 11.5, fontWeight: 800, color: COLORS.navy }}>{item.siteType}</span>
-                            <span style={{ fontSize: 11.5, fontWeight: 900, color: COLORS.blue, fontFamily: "IBM Plex Mono" }}>{item.count}</span>
-                          </div>
-                        )) : (
-                          <span style={{ fontSize: 12, color: COLORS.textDim }}>No site types found for current filters.</span>
-                        )}
-                      </div>
-                    </div>
                   </div>
+
+                  <aside className="electricity-panel" style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 14, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.96) 100%)", padding: 8, boxShadow: "0 6px 14px rgba(16,36,62,0.05)", display: "grid", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, overflowX: "auto", whiteSpace: "nowrap", scrollbarWidth: "thin" }}>
+                          {siteTypeCounts.length > 0 ? siteTypeCounts.map((item) => (
+                            <div key={`site-type-inline-${item.siteType}`} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, padding: "2px 8px", background: COLORS.panelSoft, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                              <span style={{ fontSize: 10.5, fontWeight: 800, color: COLORS.navy }}>{item.siteType}</span>
+                              <span style={{ fontSize: 10.5, fontWeight: 900, color: COLORS.blue, fontFamily: "IBM Plex Mono" }}>{item.count}</span>
+                            </div>
+                          )) : (
+                            <span style={{ fontSize: 10.5, color: COLORS.textDim }}>No site types</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11.5, fontWeight: 900, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45, whiteSpace: "nowrap" }}>
+                          Filters
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={resetElectricityFilters}
+                        title="Reset all filters"
+                        aria-label="Reset all filters"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 8,
+                          border: `1px solid ${COLORS.blueSoft}`,
+                          background: "linear-gradient(180deg, #eff5ff 0%, #e2ecfb 100%)",
+                          color: COLORS.navy,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          boxShadow: COLORS.shadowSoft,
+                          padding: 0,
+                        }}
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 140px))", justifyContent: "start", gap: 6 }}>
+                      {[
+                        { label: "Manager", value: selectedCpManager, onChange: setSelectedCpManager, options: cpManagerOptions },
+                        { label: "Executive", value: selectedCpExecutive, onChange: setSelectedCpExecutive, options: cpExecutiveOptions },
+                        { label: "Month", value: selectedCpMonth, onChange: setSelectedCpMonth, options: cpMonthOptions },
+                        { label: "Site Type", value: selectedCpSiteType, onChange: setSelectedCpSiteType, options: cpSiteTypeOptions },
+                        { label: "Site", value: selectedCpSite, onChange: setSelectedCpSite, options: cpSiteOptions },
+                      ].map((filter) => (
+                        <label key={filter.label} style={{ display: "grid", gap: 3, fontSize: 10.5, color: COLORS.textDim }}>
+                          <span style={{ fontWeight: 700, color: COLORS.navy, lineHeight: 1 }}>{filter.label}</span>
+                          <select
+                            value={filter.value}
+                            onChange={(event) => filter.onChange(event.target.value)}
+                            style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "1px 8px", minHeight: 24, fontSize: 11.5, color: COLORS.text, background: "#ffffff", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)" }}
+                          >
+                            {filter.options.map((option) => (
+                              <option key={`${filter.label.toLowerCase()}-${option}`} value={option}>{option}</option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+
+                  </aside>
                 </div>
               </div>
 
@@ -1896,21 +1866,6 @@ useEffect(() => {
                 </Card>
               </div>
 
-              <Card title="Electricity performance" desc="Units comparison from CP Data" style={{ marginBottom: 0 }}>
-                {cpLoading ? (
-                  <div style={{ padding: "30px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                    Loading CP Data from Google Sheets...
-                  </div>
-                ) : cpError ? (
-                  <div style={{ padding: "30px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                    {cpError}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 12.5, color: COLORS.textDim }}>
-                    Showing {filteredElectricityRows.length} CP records after filters{selectedCpSite !== "All" ? ` for ${selectedCpSite}` : ""}. Cards and charts use month-paired year comparison (2025 vs 2026).
-                  </div>
-                )}
-              </Card>
             </div>
           </>
         )}

@@ -1,6 +1,6 @@
 import { COLORS } from "../styles/colors";
 
-export default function StatCard({ icon: Icon, label, value, sub, tone = "red", valueColor }) {
+export default function StatCard({ icon: Icon, label, value, sub, tone = "red", valueColor, compact = false }) {
   const tint =
     tone === "red" ? COLORS.red :
     tone === "green" ? COLORS.green :
@@ -16,10 +16,10 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = "red", 
         border: `1px solid ${COLORS.panelEdge}`,
         borderRadius: 14,
         boxShadow: COLORS.shadowSoft,
-        padding: "16px 17px",
+        padding: compact ? "13px 14px" : "16px 17px",
         display: "flex",
         alignItems: "flex-start",
-        gap: 12,
+        gap: compact ? 10 : 12,
         minWidth: 180,
         flex: "1 1 180px",
         position: "relative",
@@ -39,8 +39,8 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = "red", 
 
       <div
         style={{
-          width: 40,
-          height: 40,
+          width: compact ? 34 : 40,
+          height: compact ? 34 : 40,
           borderRadius: 10,
           background: `${tint}18`,
           border: `1px solid ${tint}22`,
@@ -50,13 +50,13 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = "red", 
           flexShrink: 0,
         }}
       >
-        <Icon size={18} color={tint} />
+        <Icon size={compact ? 15 : 18} color={tint} />
       </div>
 
       <div style={{ minWidth: 0 }}>
         <div
           style={{
-            fontSize: 24,
+            fontSize: compact ? 21 : 24,
             fontWeight: 800,
             color: resolvedValueColor,
             lineHeight: 1.05,
@@ -68,9 +68,9 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = "red", 
 
         <div
           style={{
-            fontSize: 11.75,
+            fontSize: compact ? 11 : 11.75,
             color: COLORS.textDim,
-            marginTop: 6,
+            marginTop: compact ? 4 : 6,
             lineHeight: 1.25,
           }}
         >

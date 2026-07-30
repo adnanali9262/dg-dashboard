@@ -2,38 +2,69 @@ const storage = (() => {
   if (typeof window !== "undefined" && window.storage) return window.storage;
 
   const base = "/.netlify/functions/storage";
+  const hasLocalStorage = typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+
+  function localGet(key) {
+    if (!hasLocalStorage) return null;
+    const value = window.localStorage.getItem(key);
+    return value === null ? null : { value };
+  }
+
+  function localSet(key, value) {
+    if (!hasLocalStorage) return { ok: false };
+    window.localStorage.setItem(key, value);
+    return { ok: true };
+  }
+
+  function localDelete(key) {
+    if (!hasLocalStorage) return { ok: false };
+    window.localStorage.removeItem(key);
+    return { ok: true };
+  }
 
   return {
     async get(key) {
-      const r = await fetch(`${base}?key=${encodeURIComponent(key)}`);
-      if (r.status === 404) return null;
-      if (!r.ok) throw new Error("storage read failed");
-      return r.json();
+      try {
+        const r = await fetch(`${base}?key=${encodeURIComponent(key)}`);
+        if (r.status === 404) return localGet(key);
+        if (!r.ok) throw new Error("storage read failed");
+        return r.json();
+      } catch {
+        return localGet(key);
+      }
     },
 
     async set(key, value) {
-      const r = await fetch(base, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ key, value })
-      });
+      try {
+        const r = await fetch(base, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ key, value })
+        });
 
-      if (!r.ok) throw new Error("storage write failed");
-      return r.json();
+        if (!r.ok) throw new Error("storage write failed");
+        return r.json();
+      } catch {
+        return localSet(key, value);
+      }
     },
 
     async delete(key) {
-      const r = await fetch(
-        `${base}?key=${encodeURIComponent(key)}`,
-        {
-          method: "DELETE"
-        }
-      );
+      try {
+        const r = await fetch(
+          `${base}?key=${encodeURIComponent(key)}`,
+          {
+            method: "DELETE"
+          }
+        );
 
-      if (!r.ok) throw new Error("storage delete failed");
-      return r.json();
+        if (!r.ok) throw new Error("storage delete failed");
+        return r.json();
+      } catch {
+        return localDelete(key);
+      }
     }
   };
 })();

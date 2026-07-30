@@ -78,7 +78,7 @@ button:focus-visible {
 
 .electricity-layout {
   display: grid;
-  gap: 16px;
+  gap: 14px;
 }
 
 .electricity-topbar {
@@ -92,14 +92,13 @@ button:focus-visible {
 
 .electricity-shell {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 1fr;
+  gap: 12px;
   align-items: start;
 }
 
 .electricity-panel {
-  position: sticky;
-  top: 18px;
+  position: static;
 }
 
 .electricity-chart-grid {
