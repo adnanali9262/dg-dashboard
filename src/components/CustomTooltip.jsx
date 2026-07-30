@@ -1,6 +1,6 @@
 import { COLORS } from "../styles/colors";
 
-export default function CustomTooltip({ active, payload, label, unit = "" }) {
+export default function CustomTooltip({ active, payload, label, unit = "", tip = "" }) {
   if (!active || !payload || !payload.length) return null;
 
   return (
@@ -17,6 +17,11 @@ export default function CustomTooltip({ active, payload, label, unit = "" }) {
       }}
     >
       <div style={{ color: COLORS.navy, marginBottom: 6, fontWeight: 700 }}>{label}</div>
+      {tip ? (
+        <div style={{ color: COLORS.textDim, marginBottom: 6, lineHeight: 1.35 }}>
+          {tip}
+        </div>
+      ) : null}
       {payload.map((p, i) => (
         <div key={i} style={{ color: p.color, lineHeight: 1.45 }}>
           {p.name}: {p.value ?? "-"}{unit ? ` ${unit}` : ""}

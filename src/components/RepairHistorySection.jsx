@@ -1,10 +1,25 @@
 import { useState } from "react";
-import { Plus, Trash2, X } from "lucide-react";
+import { Plus, Trash2, X, Pencil } from "lucide-react";
 import Card from "./Card";
 import { COLORS } from "../styles/colors";
 
-const REPAIR_STATUSES = ["Pending", "In Progress", "Resolved"];
-const STATUS_COLORS = { Pending: COLORS.red, "In Progress": COLORS.amber, Resolved: COLORS.green };
+const REPAIR_STATUSES = ["Pending", "In Progress", "Completed"];
+const STATUS_COLORS = { Pending: COLORS.red, "In Progress": COLORS.amber, Completed: COLORS.green };
+const RESPONSIBLE_OPTIONS = ["", "Vendor", "PTCL"];
+
+const emptyForm = () => ({
+  exchangeName: "",
+  dgNameCapacity: "",
+  faultOccurrenceDate: new Date().toISOString().slice(0, 10),
+  faultOccurrenceReading: "",
+  faultDetail: "",
+  status: "Pending",
+  faultClearanceDate: "",
+  faultClearanceReading: "",
+  responsibleType: "",
+  vendorName: "",
+  ptclStaffName: "",
+});
 
 const inputStyle = {
   flex: 1,
@@ -19,31 +34,71 @@ const inputStyle = {
   boxSizing: "border-box",
 };
 
-export default function RepairHistorySection({ repairs, loading, siteNames, onAdd, onDelete }) {
+export default function RepairHistorySection({ repairs, loading, siteNames, onAdd, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ site: "", date: new Date().toISOString().slice(0, 10), issue: "", parts: "", cost: "", status: "Pending" });
+  const [form, setForm] = useState(emptyForm());
+  const [editingRowNumber, setEditingRowNumber] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
  
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
  
-  const submit = (e) => {
+  const startNewEntry = () => {
+    setForm(emptyForm());
+    setEditingRowNumber(0);
+    setShowForm((s) => !s);
+  };
+
+  const startEdit = (entry) => {
+    setForm({
+      exchangeName: entry.exchangeName || entry.site || "",
+      dgNameCapacity: entry.dgNameCapacity || "",
+      faultOccurrenceDate: entry.faultOccurrenceDate || entry.date || "",
+      faultOccurrenceReading: entry.faultOccurrenceReading || "",
+      faultDetail: entry.faultDetail || entry.issue || "",
+      status: entry.status || "Pending",
+      faultClearanceDate: entry.faultClearanceDate || "",
+      faultClearanceReading: entry.faultClearanceReading || "",
+      responsibleType: entry.responsibleType || "",
+      vendorName: entry.vendorName || "",
+      ptclStaffName: entry.ptclStaffName || "",
+    });
+    setEditingRowNumber(Number(entry.rowNumber || 0));
+    setShowForm(true);
+  };
+
+  const submit = async (e) => {
     e.preventDefault();
-    if (!form.site.trim() || !form.issue.trim()) return;
-    onAdd({ ...form, id: Date.now().toString() });
-    setForm({ site: "", date: new Date().toISOString().slice(0, 10), issue: "", parts: "", cost: "", status: "Pending" });
-    setShowForm(false);
+    if (!form.exchangeName.trim() || !form.dgNameCapacity.trim() || !form.faultDetail.trim()) return;
+    setSubmitting(true);
+    try {
+      if (editingRowNumber && onUpdate) {
+        await onUpdate(editingRowNumber, form);
+      } else {
+        await onAdd({ ...form, id: Date.now().toString() });
+      }
+      setForm(emptyForm());
+      setEditingRowNumber(0);
+      setShowForm(false);
+    } finally {
+      setSubmitting(false);
+    }
   };
  
-  const sorted = [...repairs].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const sorted = [...repairs].sort((a, b) => {
+    const left = a.faultOccurrenceDate || a.date || "";
+    const right = b.faultOccurrenceDate || b.date || "";
+    return left < right ? 1 : -1;
+  });
  
   return (
     <>
       <Card
         style={{ marginBottom: 22 }}
         title="Log a repair"
-        desc="Site, issue, parts used, and status"
+        desc="Exchange, DG details, fault timing, resolution status, and responsible person"
         right={
           <button
-            onClick={() => setShowForm((s) => !s)}
+            onClick={startNewEntry}
             style={{
               display: "flex", alignItems: "center", gap: 6, border: "none", cursor: "pointer",
               background: showForm ? COLORS.bg : COLORS.red, color: showForm ? COLORS.text : "#fff",
@@ -59,32 +114,78 @@ export default function RepairHistorySection({ repairs, loading, siteNames, onAd
           <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4, paddingBottom: 16 }}>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <input
-                list="dg-site-names" placeholder="Exchange / site name" value={form.site}
-                onChange={(e) => update("site", e.target.value)}
+                list="dg-site-names" placeholder="Exchange Name" value={form.exchangeName}
+                onChange={(e) => update("exchangeName", e.target.value)}
                 style={inputStyle}
               />
               <datalist id="dg-site-names">
                 {siteNames.map((n) => <option key={n} value={n} />)}
               </datalist>
-              <input type="date" value={form.date} onChange={(e) => update("date", e.target.value)} style={{ ...inputStyle, maxWidth: 160 }} />
+              <input
+                placeholder="DG name / Capacity"
+                value={form.dgNameCapacity}
+                onChange={(e) => update("dgNameCapacity", e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <input type="date" value={form.faultOccurrenceDate} onChange={(e) => update("faultOccurrenceDate", e.target.value)} style={{ ...inputStyle, maxWidth: 180 }} />
+              <input
+                placeholder="Fault occurance M/R reading"
+                type="number"
+                value={form.faultOccurrenceReading}
+                onChange={(e) => update("faultOccurrenceReading", e.target.value)}
+                style={{ ...inputStyle, maxWidth: 220 }}
+              />
               <select value={form.status} onChange={(e) => update("status", e.target.value)} style={{ ...inputStyle, maxWidth: 150, cursor: "pointer" }}>
                 {REPAIR_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+
             <textarea
-              placeholder="What went wrong?" value={form.issue} onChange={(e) => update("issue", e.target.value)}
+              placeholder="Detail of fault" value={form.faultDetail} onChange={(e) => update("faultDetail", e.target.value)}
               rows={2} style={{ ...inputStyle, resize: "vertical" }}
             />
+
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <input placeholder="Spare parts used (optional)" value={form.parts} onChange={(e) => update("parts", e.target.value)} style={inputStyle} />
-              <input placeholder="Cost, PKR (optional)" type="number" value={form.cost} onChange={(e) => update("cost", e.target.value)} style={{ ...inputStyle, maxWidth: 160 }} />
+              <input type="date" value={form.faultClearanceDate} onChange={(e) => update("faultClearanceDate", e.target.value)} style={{ ...inputStyle, maxWidth: 180 }} />
+              <input
+                placeholder="Fault clearance M/R reading"
+                type="number"
+                value={form.faultClearanceReading}
+                onChange={(e) => update("faultClearanceReading", e.target.value)}
+                style={{ ...inputStyle, maxWidth: 220 }}
+              />
             </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <select value={form.responsibleType} onChange={(e) => update("responsibleType", e.target.value)} style={{ ...inputStyle, maxWidth: 180, cursor: "pointer" }}>
+                {RESPONSIBLE_OPTIONS.map((option) => <option key={option || "none"} value={option}>{option || "Select Vendor / PTCL (optional)"}</option>)}
+              </select>
+              {form.responsibleType === "Vendor" ? (
+                <input
+                  placeholder="Vendor name"
+                  value={form.vendorName}
+                  onChange={(e) => update("vendorName", e.target.value)}
+                  style={inputStyle}
+                />
+              ) : (
+                <input
+                  placeholder="PTCL staff name"
+                  value={form.ptclStaffName}
+                  onChange={(e) => update("ptclStaffName", e.target.value)}
+                  style={inputStyle}
+                />
+              )}
+            </div>
+
             <div>
               <button type="submit" style={{
                 border: "none", cursor: "pointer", background: COLORS.green, color: "#fff",
                 borderRadius: 8, padding: "8px 16px", fontSize: 12.5, fontWeight: 600,
-              }}>
-                Save entry
+              }} disabled={submitting}>
+                {submitting ? "Saving..." : editingRowNumber ? "Update entry" : "Save entry"}
               </button>
             </div>
           </form>
@@ -105,8 +206,8 @@ export default function RepairHistorySection({ repairs, loading, siteNames, onAd
             }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>{r.site}</span>
-                  <span style={{ fontSize: 11, color: COLORS.textDim, fontFamily: "'IBM Plex Mono', monospace" }}>{r.date}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{r.exchangeName || r.site}</span>
+                  <span style={{ fontSize: 11, color: COLORS.textDim, fontFamily: "'IBM Plex Mono', monospace" }}>{r.faultOccurrenceDate || r.date}</span>
                   <span style={{
                     fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 12,
                     color: "#fff", background: STATUS_COLORS[r.status] || COLORS.textDim,
@@ -114,19 +215,41 @@ export default function RepairHistorySection({ repairs, loading, siteNames, onAd
                     {r.status}
                   </span>
                 </div>
-                <div style={{ fontSize: 12.5, color: COLORS.text }}>{r.issue}</div>
-                {(r.parts || r.cost) && (
-                  <div style={{ fontSize: 11.5, color: COLORS.textDim, marginTop: 3 }}>
-                    {r.parts ? `Parts: ${r.parts}` : ""}{r.parts && r.cost ? " · " : ""}{r.cost ? `PKR ${r.cost}` : ""}
-                  </div>
-                )}
+                <div style={{ fontSize: 12.5, color: COLORS.text, fontWeight: 600 }}>{r.dgNameCapacity || ""}</div>
+                <div style={{ fontSize: 12.5, color: COLORS.text, marginTop: 4 }}>{r.faultDetail || r.issue}</div>
+                <div style={{ fontSize: 11.5, color: COLORS.textDim, marginTop: 6, display: "grid", gap: 2 }}>
+                  {(r.faultOccurrenceReading || r.faultOccurrenceReading === 0) ? <div>Fault occurance M/R reading: {r.faultOccurrenceReading}</div> : null}
+                  {r.faultClearanceDate ? <div>Fault clearance date: {r.faultClearanceDate}</div> : null}
+                  {(r.faultClearanceReading || r.faultClearanceReading === 0) ? <div>Fault clearance M/R reading: {r.faultClearanceReading}</div> : null}
+                  {r.responsibleType ? (
+                    <div>
+                      By {r.responsibleType}: {r.responsibleType === "Vendor" ? (r.vendorName || "—") : (r.ptclStaffName || "—")}
+                    </div>
+                  ) : null}
+                  {!r.responsibleType && (r.parts || r.cost) ? (
+                    <div>
+                      {r.parts ? `Parts: ${r.parts}` : ""}{r.parts && r.cost ? " · " : ""}{r.cost ? `PKR ${r.cost}` : ""}
+                    </div>
+                  ) : null}
+                  {!r.responsibleType && !r.parts && !r.cost && r.dgNameCapacity == null && (r.issue || r.site) ? (
+                    <div>Legacy entry</div>
+                  ) : null}
+                </div>
               </div>
-              <button
-                onClick={() => onDelete(r.id)} title="Delete"
-                style={{ border: "none", background: "transparent", cursor: "pointer", padding: 4, flexShrink: 0 }}
-              >
-                <Trash2 size={14} color={COLORS.textDim} />
-              </button>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                <button
+                  onClick={() => startEdit(r)} title="Edit"
+                  style={{ border: "none", background: "transparent", cursor: "pointer", padding: 4 }}
+                >
+                  <Pencil size={14} color={COLORS.textDim} />
+                </button>
+                <button
+                  onClick={() => onDelete(r.id, r.rowNumber)} title="Delete"
+                  style={{ border: "none", background: "transparent", cursor: "pointer", padding: 4 }}
+                >
+                  <Trash2 size={14} color={COLORS.textDim} />
+                </button>
+              </div>
             </div>
           ))}
         </div>

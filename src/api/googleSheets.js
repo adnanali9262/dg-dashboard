@@ -97,6 +97,22 @@ export async function getSummaryData() {
 const FUEL_BALANCE_SHEET_NAMES = ["Fuel Balance", "Fuel_Balance", "DG Fuel Balance", "Fuel"];
 const PMR_SHEET_NAMES = ["PMR Tracking", "PMR_Tracking", "PMR"];
 const CP_SHEET_NAMES = ["CP Data", "CP_Data", "CP", "CPDATA"];
+const FUEL_DATA_SHEET_NAMES = ["fuel data", "Fuel Data", "Fuel_Data", "FuelData", "FUEL DATA"];
+const REPAIR_HISTORY_SHEET_NAMES = ["DG repair History", "DG Repair History", "DG_repair_History"];
+
+const REPAIR_HISTORY_HEADERS = {
+  exchangeName: "Exchange Name",
+  dgNameCapacity: "DG name/Capacity",
+  faultOccurrenceDate: "Fault occurance date",
+  faultOccurrenceReading: "fault occurance M/R reading",
+  faultDetail: "detail of fault",
+  status: "resolution pending/in progress/Completed",
+  faultClearanceDate: "Fault clearance date (if applicable)",
+  faultClearanceReading: "fault clearance M/R reading  (if applicable)",
+  responsibleType: "by vendor or PTCL ",
+  vendorName: "(if vendor? its name)",
+  ptclStaffName: "if PTCL staff ? its name",
+};
 
 function getHeaderIndex(headers, patterns) {
   return headers.findIndex((header) => {
@@ -125,20 +141,26 @@ function parseFuelBalanceRows(payload) {
       /available\s*fuel/i,
       /balance.*lit/i,
     ]);
+    const openingBalanceCol = getHeaderIndex(headers, [/opening\s*balance/i]);
+    const startMeterCol = getHeaderIndex(headers, [/reading\s*of\s*hour\s*meter\s*at\s*start/i, /hour\s*meter.*start/i]);
     const consumptionCol = getHeaderIndex(headers, [
       /per\s*hour\s*fuel\s*consumption/i,
       /fuel\s*consumption/i,
       /consumption.*hour/i,
     ]);
+    const toppingCol = getHeaderIndex(headers, [/cummulative\s*topping/i, /cumulative\s*topping/i, /topping/i]);
 
-    if (siteCol === -1 || fuelCol === -1) {
+    if (siteCol === -1) {
       return [];
     }
 
     return data.slice(1).map((row) => ({
       site: row[siteCol],
-      fuelBalance: Number(row[fuelCol] || 0),
+      fuelBalance: fuelCol === -1 ? 0 : Number(row[fuelCol] || 0),
+      openingBalance: openingBalanceCol === -1 ? 0 : Number(row[openingBalanceCol] || 0),
+      startHourMeter: startMeterCol === -1 ? 0 : Number(row[startMeterCol] || 0),
       perHourFuelConsumption: consumptionCol === -1 ? 0 : Number(row[consumptionCol] || 0),
+      cumulativeTopping: toppingCol === -1 ? 0 : Number(row[toppingCol] || 0),
     }));
   }
 
@@ -153,11 +175,30 @@ function parseFuelBalanceRows(payload) {
       row.Available_Fuel ||
       0
     ),
+    openingBalance: Number(
+      row["Opening Balance of this month"] ||
+      row.Opening_Balance_of_this_month ||
+      row.openingBalance ||
+      0
+    ),
+    startHourMeter: Number(
+      row["Reading of Hour Meter at start of this month"] ||
+      row.Reading_of_Hour_Meter_at_start_of_this_month ||
+      row.startHourMeter ||
+      0
+    ),
     perHourFuelConsumption: Number(
       row.Per_Hour_Fuel_Consumption ||
       row.perHourFuelConsumption ||
       row["Per Hour Fuel Consumption"] ||
       row["Fuel Consumption"] ||
+      0
+    ),
+    cumulativeTopping: Number(
+      row["Cummulative topping in current month (if any)"] ||
+      row["Cumulative topping in current month (if any)"] ||
+      row.Cummulative_topping_in_current_month_if_any ||
+      row.cumulativeTopping ||
       0
     ),
   }));
@@ -299,4 +340,149 @@ export async function getCPData() {
     console.error("✗ Error in getCPData:", error);
     return [];
   }
+}
+
+function parseFuelPerformanceRows(payload) {
+  if (payload?.error) {
+    throw new Error(payload.error);
+  }
+
+  const data = Array.isArray(payload) ? payload : payload?.data || payload?.value || [];
+  if (!Array.isArray(data) || data.length === 0) return [];
+
+  // If Apps Script already returns row objects, pass through.
+  if (!Array.isArray(data[0])) {
+    return data;
+  }
+
+  const headers = data[0].map((header) => String(header || "").trim());
+  return data.slice(1)
+    .filter((row) => Array.isArray(row) && row.some((cell) => String(cell || "").trim() !== ""))
+    .map((row) => {
+      const item = {};
+      headers.forEach((header, index) => {
+        if (header) item[header] = row[index];
+      });
+      return item;
+    });
+}
+
+export async function getFuelPerformanceData() {
+  try {
+    for (const sheetName of FUEL_DATA_SHEET_NAMES) {
+      const response = await fetch(
+        `${API_URL}?action=getData&sheet=${encodeURIComponent(sheetName)}`
+      );
+
+      if (!response.ok) continue;
+
+      const payload = await response.json();
+      const rows = parseFuelPerformanceRows(payload);
+      if (rows.length > 0) return rows;
+    }
+
+    return [];
+  } catch (error) {
+    console.error("✗ Error in getFuelPerformanceData:", error);
+    return [];
+  }
+}
+
+function normalizeRepairHistoryRow(row) {
+  return {
+    id: String(row.id || row.__rowNumber || Date.now()),
+    rowNumber: Number(row.__rowNumber || row.rowNumber || 0) || 0,
+    exchangeName: getRowValue(row, [REPAIR_HISTORY_HEADERS.exchangeName, "exchangeName", "site"]),
+    dgNameCapacity: getRowValue(row, [REPAIR_HISTORY_HEADERS.dgNameCapacity, "dgNameCapacity"]),
+    faultOccurrenceDate: getRowValue(row, [REPAIR_HISTORY_HEADERS.faultOccurrenceDate, "faultOccurrenceDate", "date"]),
+    faultOccurrenceReading: getRowValue(row, [REPAIR_HISTORY_HEADERS.faultOccurrenceReading, "faultOccurrenceReading"]),
+    faultDetail: getRowValue(row, [REPAIR_HISTORY_HEADERS.faultDetail, "faultDetail", "issue"]),
+    status: getRowValue(row, [REPAIR_HISTORY_HEADERS.status, "status"]) || "Pending",
+    faultClearanceDate: getRowValue(row, [REPAIR_HISTORY_HEADERS.faultClearanceDate, "faultClearanceDate"]),
+    faultClearanceReading: getRowValue(row, [REPAIR_HISTORY_HEADERS.faultClearanceReading, "faultClearanceReading"]),
+    responsibleType: getRowValue(row, [REPAIR_HISTORY_HEADERS.responsibleType, "responsibleType"]),
+    vendorName: getRowValue(row, [REPAIR_HISTORY_HEADERS.vendorName, "vendorName"]),
+    ptclStaffName: getRowValue(row, [REPAIR_HISTORY_HEADERS.ptclStaffName, "ptclStaffName"]),
+  };
+}
+
+function toRepairHistoryPayload(entry) {
+  return {
+    [REPAIR_HISTORY_HEADERS.exchangeName]: entry.exchangeName || "",
+    [REPAIR_HISTORY_HEADERS.dgNameCapacity]: entry.dgNameCapacity || "",
+    [REPAIR_HISTORY_HEADERS.faultOccurrenceDate]: entry.faultOccurrenceDate || "",
+    [REPAIR_HISTORY_HEADERS.faultOccurrenceReading]: entry.faultOccurrenceReading || "",
+    [REPAIR_HISTORY_HEADERS.faultDetail]: entry.faultDetail || "",
+    [REPAIR_HISTORY_HEADERS.status]: entry.status || "Pending",
+    [REPAIR_HISTORY_HEADERS.faultClearanceDate]: entry.faultClearanceDate || "",
+    [REPAIR_HISTORY_HEADERS.faultClearanceReading]: entry.faultClearanceReading || "",
+    [REPAIR_HISTORY_HEADERS.responsibleType]: entry.responsibleType || "",
+    [REPAIR_HISTORY_HEADERS.vendorName]: entry.vendorName || "",
+    [REPAIR_HISTORY_HEADERS.ptclStaffName]: entry.ptclStaffName || "",
+  };
+}
+
+export async function getRepairHistoryData() {
+  try {
+    for (const sheetName of REPAIR_HISTORY_SHEET_NAMES) {
+      const response = await fetch(`${API_URL}?action=getData&sheet=${encodeURIComponent(sheetName)}`);
+      if (!response.ok) continue;
+      const payload = await response.json();
+      const data = Array.isArray(payload) ? payload : payload?.data || payload?.value || [];
+      if (Array.isArray(data) && data.length > 0) {
+        return data.map(normalizeRepairHistoryRow);
+      }
+    }
+    return [];
+  } catch (error) {
+    console.error("✗ Error in getRepairHistoryData:", error);
+    return [];
+  }
+}
+
+export async function appendRepairHistoryEntry(entry) {
+  const payload = toRepairHistoryPayload(entry);
+  const sheetName = REPAIR_HISTORY_SHEET_NAMES[0];
+  const response = await fetch(`${API_URL}?action=appendData&sheet=${encodeURIComponent(sheetName)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to append repair history entry.");
+  }
+  const result = await response.json();
+  if (result?.error) throw new Error(result.error);
+  return result;
+}
+
+export async function updateRepairHistoryEntry(rowNumber, entry) {
+  const payload = toRepairHistoryPayload(entry);
+  const sheetName = REPAIR_HISTORY_SHEET_NAMES[0];
+  const response = await fetch(`${API_URL}?action=updateData&sheet=${encodeURIComponent(sheetName)}&row=${encodeURIComponent(rowNumber)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to update repair history entry.");
+  }
+  const result = await response.json();
+  if (result?.error) throw new Error(result.error);
+  return result;
+}
+
+export async function deleteRepairHistoryEntry(rowNumber) {
+  const sheetName = REPAIR_HISTORY_SHEET_NAMES[0];
+  const response = await fetch(`${API_URL}?action=deleteData&sheet=${encodeURIComponent(sheetName)}&row=${encodeURIComponent(rowNumber)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to delete repair history entry.");
+  }
+  const result = await response.json();
+  if (result?.error) throw new Error(result.error);
+  return result;
 }

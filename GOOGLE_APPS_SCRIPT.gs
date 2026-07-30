@@ -39,6 +39,8 @@ function handleRequest(e) {
         return handleAppendData(sheetName, e);
       case "updateData":
         return handleUpdateData(sheetName, e);
+      case "deleteData":
+        return handleDeleteData(sheetName, e);
       case "getSheets":
         return handleGetSheets();
       default:
@@ -100,6 +102,23 @@ function handleUpdateData(sheetName, e) {
   
   const payload = JSON.parse(e.postData.contents);
   const id = e.parameter.id;
+  const rowNumber = Number(e.parameter.row || 0);
+
+  if (rowNumber > 1) {
+    const headers = getHeaders(sheet);
+    for (let j = 0; j < headers.length; j++) {
+      if (payload[headers[j]] !== undefined) {
+        sheet.getRange(rowNumber, j + 1).setValue(payload[headers[j]]);
+      }
+    }
+
+    return jsonResponse({
+      success: true,
+      message: "Row updated in " + sheetName,
+      row: rowNumber,
+      data: payload
+    });
+  }
   
   if (!id) {
     return jsonResponse({ error: "Missing 'id' parameter for update" }, 400);
@@ -137,6 +156,21 @@ function handleUpdateData(sheetName, e) {
     message: "Row updated in " + sheetName,
     data: payload
   });
+}
+
+function handleDeleteData(sheetName, e) {
+  const sheet = getSheet(sheetName);
+  if (!sheet) {
+    return jsonResponse({ error: "Sheet not found: " + sheetName }, 404);
+  }
+
+  const rowNumber = Number(e.parameter.row || 0);
+  if (rowNumber <= 1 || rowNumber > sheet.getLastRow()) {
+    return jsonResponse({ error: "Missing or invalid 'row' parameter for delete" }, 400);
+  }
+
+  sheet.deleteRow(rowNumber);
+  return jsonResponse({ success: true, message: "Row deleted from " + sheetName, row: rowNumber });
 }
 
 /**
@@ -188,6 +222,7 @@ function sheetToJSON(sheet) {
     for (let j = 0; j < headers.length; j++) {
       row[headers[j]] = data[i][j];
     }
+    row.__rowNumber = i + 1;
     jsonArray.push(row);
   }
   
