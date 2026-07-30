@@ -1718,198 +1718,200 @@ useEffect(() => {
 
         {section === "electricity" && (
           <>
-            <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 16, padding: 14, background: "linear-gradient(140deg, #f9fbff 0%, #f3f8ff 45%, #f9fcff 100%)", boxShadow: "0 8px 24px rgba(16,36,62,0.06)", marginBottom: 18, display: "grid", gap: 14 }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.6 }}>
-                  Electricity Performance Studio
-                </div>
-                <div style={{ fontSize: 11.5, color: COLORS.textDim, fontFamily: "IBM Plex Mono" }}>
-                  {cpLoading ? "Syncing CP Data..." : `Rows: ${filteredElectricityRows.length}${selectedCpSite !== "All" ? ` | Site: ${selectedCpSite}` : ""}`}
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: 14, alignItems: "start", flexWrap: "wrap" }}>
-                <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 12, background: "#ffffff", padding: 10, boxShadow: "0 4px 12px rgba(16,36,62,0.04)", display: "grid", gap: 8, width: 210, flex: "0 0 210px" }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45 }}>
-                    Filters
-                  </div>
-
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <label style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
-                      <span>Manager</span>
-                      <select value={selectedCpManager} onChange={(event) => setSelectedCpManager(event.target.value)} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: COLORS.text, background: COLORS.panelSoft }}>
-                        {cpManagerOptions.map((option) => (
-                          <option key={`manager-${option}`} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
-                      <span>Executive</span>
-                      <select value={selectedCpExecutive} onChange={(event) => setSelectedCpExecutive(event.target.value)} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: COLORS.text, background: COLORS.panelSoft }}>
-                        {cpExecutiveOptions.map((option) => (
-                          <option key={`executive-${option}`} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
-                      <span>Month</span>
-                      <select value={selectedCpMonth} onChange={(event) => setSelectedCpMonth(event.target.value)} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: COLORS.text, background: COLORS.panelSoft }}>
-                        {cpMonthOptions.map((option) => (
-                          <option key={`month-${option}`} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
-                      <span>Site Type</span>
-                      <select value={selectedCpSiteType} onChange={(event) => setSelectedCpSiteType(event.target.value)} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: COLORS.text, background: COLORS.panelSoft }}>
-                        {cpSiteTypeOptions.map((option) => (
-                          <option key={`site-type-${option}`} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
-                      <span>Site</span>
-                      <select value={selectedCpSite} onChange={(event) => setSelectedCpSite(event.target.value)} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: COLORS.text, background: COLORS.panelSoft }}>
-                        {cpSiteOptions.map((option) => (
-                          <option key={`site-${option}`} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={resetElectricityFilters}
-                    style={{
-                      marginTop: 2,
-                      border: `1px solid ${COLORS.panelEdge}`,
-                      borderRadius: 8,
-                      padding: "9px 11px",
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: COLORS.navy,
-                      background: "linear-gradient(180deg, #eef5ff 0%, #e5efff 100%)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Reset All Filters
-                  </button>
-                </div>
-
-                <div style={{ display: "grid", gap: 12, flex: "1 1 640px", minWidth: 0 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
-                    <StatCard icon={Activity} label="Units 2025" value={round2(electricitySummary.units2025).toFixed(2)} tone="navy" />
-                    <StatCard icon={Gauge} label="Units 2026" value={round2(electricitySummary.units2026).toFixed(2)} tone="blue" />
-                    <StatCard
-                      icon={electricitySummary.unitsDelta >= 0 ? ArrowDownRight : ArrowUpRight}
-                      label="Inc/Dec Units"
-                      value={`${electricitySummary.unitsDelta >= 0 ? "↓" : "↑"} ${round2(electricitySummary.unitsDelta).toFixed(2)}`}
-                      sub={electricitySummary.unitsDelta >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
-                      tone={electricitySummary.unitsDelta >= 0 ? "green" : "red"}
-                      valueColor={electricitySummary.unitsDelta >= 0 ? COLORS.green : COLORS.red}
-                    />
-                    <StatCard
-                      icon={electricitySummary.unitsDeltaPercent === null ? Activity : electricitySummary.unitsDeltaPercent >= 0 ? ArrowDownRight : ArrowUpRight}
-                      label="Inc/Dec %"
-                      value={electricitySummary.unitsDeltaPercent === null
-                        ? "—"
-                        : `${electricitySummary.unitsDeltaPercent >= 0 ? "↓" : "↑"} ${round2(electricitySummary.unitsDeltaPercent).toFixed(2)}%`}
-                      sub={electricitySummary.unitsDeltaPercent === null ? "No 2025 baseline" : electricitySummary.unitsDeltaPercent >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
-                      tone={electricitySummary.unitsDeltaPercent === null
-                        ? "navy"
-                        : electricitySummary.unitsDeltaPercent >= 0
-                          ? "green"
-                          : "red"}
-                      valueColor={electricitySummary.unitsDeltaPercent === null
-                        ? COLORS.text
-                        : electricitySummary.unitsDeltaPercent >= 0
-                          ? COLORS.green
-                          : COLORS.red}
-                    />
-                  </div>
-
-                  <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 12, background: "#ffffff", padding: "10px 12px", boxShadow: "0 3px 10px rgba(16,36,62,0.04)", display: "grid", gap: 8 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45 }}>
-                      Site Type Mix (Filtered)
+            <div className="electricity-layout">
+              <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 18, padding: 18, background: "linear-gradient(145deg, #f8fbff 0%, #eef4fb 42%, #f9fcff 100%)", boxShadow: "0 10px 28px rgba(16,36,62,0.08)" }}>
+                <div className="electricity-topbar">
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.65 }}>
+                      Electricity Performance Studio
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {siteTypeCounts.length > 0 ? siteTypeCounts.map((item) => (
-                        <div key={`site-type-count-${item.siteType}`} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, padding: "5px 10px", background: COLORS.panelSoft, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 11.5, fontWeight: 700, color: COLORS.navy }}>{item.siteType}</span>
-                          <span style={{ fontSize: 11.5, fontWeight: 800, color: COLORS.blue, fontFamily: "IBM Plex Mono" }}>{item.count}</span>
+                    <div style={{ marginTop: 5, fontSize: 12.5, color: COLORS.textDim, lineHeight: 1.35 }}>
+                      Compare 2025 against 2026 with a filter-first layout and stronger contrast for fast scanning.
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, background: "rgba(255,255,255,0.88)", padding: "6px 10px", fontSize: 11.5, color: COLORS.navy, fontWeight: 700, boxShadow: COLORS.shadowSoft }}>
+                      {cpLoading ? "Syncing CP Data..." : `${filteredElectricityRows.length} rows visible`}
+                    </div>
+                    {selectedCpSite !== "All" && (
+                      <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, background: "rgba(255,255,255,0.88)", padding: "6px 10px", fontSize: 11.5, color: COLORS.blue, fontWeight: 700, boxShadow: COLORS.shadowSoft }}>
+                        Site: {selectedCpSite}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="electricity-shell" style={{ marginTop: 16 }}>
+                  <aside className="electricity-panel" style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 16, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.96) 100%)", padding: 14, boxShadow: "0 8px 20px rgba(16,36,62,0.06)", display: "grid", gap: 12 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 900, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45 }}>
+                        Filters
+                      </div>
+                      <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: "IBM Plex Mono" }}>
+                        Active controls
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {[
+                        { label: "Manager", value: selectedCpManager, onChange: setSelectedCpManager, options: cpManagerOptions },
+                        { label: "Executive", value: selectedCpExecutive, onChange: setSelectedCpExecutive, options: cpExecutiveOptions },
+                        { label: "Month", value: selectedCpMonth, onChange: setSelectedCpMonth, options: cpMonthOptions },
+                        { label: "Site Type", value: selectedCpSiteType, onChange: setSelectedCpSiteType, options: cpSiteTypeOptions },
+                        { label: "Site", value: selectedCpSite, onChange: setSelectedCpSite, options: cpSiteOptions },
+                      ].map((filter) => (
+                        <label key={filter.label} style={{ display: "grid", gap: 5, fontSize: 11.5, color: COLORS.textDim }}>
+                          <span style={{ fontWeight: 700, color: COLORS.navy }}>{filter.label}</span>
+                          <select
+                            value={filter.value}
+                            onChange={(event) => filter.onChange(event.target.value)}
+                            style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 10, padding: "9px 10px", fontSize: 12.5, color: COLORS.text, background: "#ffffff", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)" }}
+                          >
+                            {filter.options.map((option) => (
+                              <option key={`${filter.label.toLowerCase()}-${option}`} value={option}>{option}</option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={resetElectricityFilters}
+                      style={{
+                        marginTop: 2,
+                        border: `1px solid ${COLORS.blueSoft}`,
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        fontSize: 12.5,
+                        fontWeight: 900,
+                        color: COLORS.navy,
+                        background: "linear-gradient(180deg, #eff5ff 0%, #e2ecfb 100%)",
+                        cursor: "pointer",
+                        boxShadow: COLORS.shadowSoft,
+                      }}
+                    >
+                      Reset All Filters
+                    </button>
+                  </aside>
+
+                  <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
+                      <StatCard icon={Activity} label="Units 2025" value={round2(electricitySummary.units2025).toFixed(2)} tone="navy" />
+                      <StatCard icon={Gauge} label="Units 2026" value={round2(electricitySummary.units2026).toFixed(2)} tone="blue" />
+                      <StatCard
+                        icon={electricitySummary.unitsDelta >= 0 ? ArrowDownRight : ArrowUpRight}
+                        label="Inc/Dec Units"
+                        value={`${electricitySummary.unitsDelta >= 0 ? "↓" : "↑"} ${round2(electricitySummary.unitsDelta).toFixed(2)}`}
+                        sub={electricitySummary.unitsDelta >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
+                        tone={electricitySummary.unitsDelta >= 0 ? "green" : "red"}
+                        valueColor={electricitySummary.unitsDelta >= 0 ? COLORS.green : COLORS.red}
+                      />
+                      <StatCard
+                        icon={electricitySummary.unitsDeltaPercent === null ? Activity : electricitySummary.unitsDeltaPercent >= 0 ? ArrowDownRight : ArrowUpRight}
+                        label="Inc/Dec %"
+                        value={electricitySummary.unitsDeltaPercent === null
+                          ? "—"
+                          : `${electricitySummary.unitsDeltaPercent >= 0 ? "↓" : "↑"} ${round2(electricitySummary.unitsDeltaPercent).toFixed(2)}%`}
+                        sub={electricitySummary.unitsDeltaPercent === null ? "No 2025 baseline" : electricitySummary.unitsDeltaPercent >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
+                        tone={electricitySummary.unitsDeltaPercent === null
+                          ? "navy"
+                          : electricitySummary.unitsDeltaPercent >= 0
+                            ? "green"
+                            : "red"}
+                        valueColor={electricitySummary.unitsDeltaPercent === null
+                          ? COLORS.text
+                          : electricitySummary.unitsDeltaPercent >= 0
+                            ? COLORS.green
+                            : COLORS.red}
+                      />
+                    </div>
+
+                    <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 16, background: "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,250,254,0.98) 100%)", padding: "12px 14px", boxShadow: "0 6px 16px rgba(16,36,62,0.05)", display: "grid", gap: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                        <div style={{ fontSize: 11.5, fontWeight: 900, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45 }}>
+                          Site Type Mix
                         </div>
-                      )) : (
-                        <span style={{ fontSize: 12, color: COLORS.textDim }}>No site types found for current filters.</span>
-                      )}
+                        <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: "IBM Plex Mono" }}>
+                          Filtered breakdown
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {siteTypeCounts.length > 0 ? siteTypeCounts.map((item) => (
+                          <div key={`site-type-count-${item.siteType}`} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, padding: "6px 11px", background: COLORS.panelSoft, display: "inline-flex", alignItems: "center", gap: 7 }}>
+                            <span style={{ fontSize: 11.5, fontWeight: 800, color: COLORS.navy }}>{item.siteType}</span>
+                            <span style={{ fontSize: 11.5, fontWeight: 900, color: COLORS.blue, fontFamily: "IBM Plex Mono" }}>{item.count}</span>
+                          </div>
+                        )) : (
+                          <span style={{ fontSize: 12, color: COLORS.textDim }}>No site types found for current filters.</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 14, marginBottom: 20 }}>
-              <Card title="Top 10 Sites - Increased Units (Bad)" desc="Month-paired comparison (2025 - 2026): negatives show increases">
-                {topIncreasedSites.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={Math.max(260, topIncreasedSites.length * 26)}>
-                    <BarChart data={topIncreasedSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
-                      <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                      <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                      <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
-                      <ReferenceLine x={0} stroke={COLORS.panelEdge} />
-                      <Tooltip content={<CustomTooltip unit="units" />} />
-                      <Bar dataKey="units" name="Increase (Bad)" fill={COLORS.red} radius={[0, 4, 4, 0]}>
-                        <LabelList dataKey="units" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+              <div className="electricity-chart-grid">
+                <Card title="Top 10 Sites - Increased Units (Bad)" desc="Month-paired comparison (2025 - 2026): negatives show increases">
+                  {topIncreasedSites.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={Math.max(260, topIncreasedSites.length * 26)}>
+                      <BarChart data={topIncreasedSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
+                        <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
+                        <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
+                        <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
+                        <ReferenceLine x={0} stroke={COLORS.panelEdge} />
+                        <Tooltip content={<CustomTooltip unit="units" />} />
+                        <Bar dataKey="units" name="Increase (Bad)" fill={COLORS.red} radius={[0, 4, 4, 0]}>
+                          <LabelList dataKey="units" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ padding: "24px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                      No site increases found for current filters.
+                    </div>
+                  )}
+                </Card>
+
+                <Card title="Top 10 Sites - Decreased Units (Good)" desc="Month-paired comparison (2025 - 2026): positives show decreases">
+                  {topDecreasedSites.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={Math.max(260, topDecreasedSites.length * 26)}>
+                      <BarChart data={topDecreasedSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
+                        <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
+                        <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
+                        <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
+                        <ReferenceLine x={0} stroke={COLORS.panelEdge} />
+                        <Tooltip content={<CustomTooltip unit="units" />} />
+                        <Bar dataKey="units" name="Decrease (Good)" fill={COLORS.green} radius={[0, 4, 4, 0]}>
+                          <LabelList dataKey="units" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ padding: "24px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                      No site decreases found for current filters.
+                    </div>
+                  )}
+                </Card>
+              </div>
+
+              <Card title="Electricity performance" desc="Units comparison from CP Data" style={{ marginBottom: 0 }}>
+                {cpLoading ? (
+                  <div style={{ padding: "30px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                    Loading CP Data from Google Sheets...
+                  </div>
+                ) : cpError ? (
+                  <div style={{ padding: "30px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
+                    {cpError}
+                  </div>
                 ) : (
-                  <div style={{ padding: "24px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                    No site increases found for current filters.
+                  <div style={{ fontSize: 12.5, color: COLORS.textDim }}>
+                    Showing {filteredElectricityRows.length} CP records after filters{selectedCpSite !== "All" ? ` for ${selectedCpSite}` : ""}. Cards and charts use month-paired year comparison (2025 vs 2026).
                   </div>
                 )}
               </Card>
-
-              <Card title="Top 10 Sites - Decreased Units (Good)" desc="Month-paired comparison (2025 - 2026): positives show decreases">
-                {topDecreasedSites.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={Math.max(260, topDecreasedSites.length * 26)}>
-                    <BarChart data={topDecreasedSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
-                      <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                      <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                      <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
-                      <ReferenceLine x={0} stroke={COLORS.panelEdge} />
-                      <Tooltip content={<CustomTooltip unit="units" />} />
-                      <Bar dataKey="units" name="Decrease (Good)" fill={COLORS.green} radius={[0, 4, 4, 0]}>
-                        <LabelList dataKey="units" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div style={{ padding: "24px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                    No site decreases found for current filters.
-                  </div>
-                )}
-              </Card>
             </div>
-
-            <Card title="Electricity performance" desc="Units comparison from CP Data" style={{ marginBottom: 0 }}>
-              {cpLoading ? (
-                <div style={{ padding: "30px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                  Loading CP Data from Google Sheets...
-                </div>
-              ) : cpError ? (
-                <div style={{ padding: "30px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                  {cpError}
-                </div>
-              ) : (
-                <div style={{ fontSize: 12.5, color: COLORS.textDim }}>
-                  Showing {filteredElectricityRows.length} CP records after filters{selectedCpSite !== "All" ? ` for ${selectedCpSite}` : ""}. Cards and charts use month-paired year comparison (2025 vs 2026).
-                </div>
-              )}
-            </Card>
           </>
         )}
 

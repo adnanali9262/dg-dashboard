@@ -22,8 +22,9 @@ body,
 body {
   min-width: 320px;
   background:
-    radial-gradient(circle at top right, rgba(35, 100, 168, 0.08), transparent 34rem),
-    linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%);
+    radial-gradient(circle at top right, rgba(35, 100, 168, 0.12), transparent 30rem),
+    radial-gradient(circle at top left, rgba(176, 42, 58, 0.07), transparent 22rem),
+    linear-gradient(180deg, #f8fbff 0%, #edf3f9 45%, #e9eff6 100%);
 }
 
 #root {
@@ -72,5 +73,47 @@ button:focus-visible {
 @media (max-width: 760px) {
   .dashboard-chart-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+.electricity-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.electricity-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 4px 2px 0;
+}
+
+.electricity-shell {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.electricity-panel {
+  position: sticky;
+  top: 18px;
+}
+
+.electricity-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 1080px) {
+  .electricity-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .electricity-panel {
+    position: static;
   }
 }

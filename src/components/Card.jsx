@@ -4,11 +4,11 @@ export default function Card({ children, style, title, desc, right }) {
   return (
     <div
       style={{
-        background: COLORS.panel,
+        background: `linear-gradient(180deg, ${COLORS.panel} 0%, ${COLORS.panelSoft} 100%)`,
         border: `1px solid ${COLORS.panelEdge}`,
-        borderRadius: 10,
-        boxShadow: COLORS.shadowSoft,
-        padding: "20px 20px 12px",
+        borderRadius: 14,
+        boxShadow: COLORS.shadow,
+        padding: "22px 22px 16px",
         marginBottom: 18,
         ...style,
       }}
@@ -20,7 +20,7 @@ export default function Card({ children, style, title, desc, right }) {
             display:"flex",
             alignItems:"flex-start",
             justifyContent:"space-between",
-            marginBottom: desc ? 14 : 16,
+            marginBottom: desc ? 16 : 18,
             gap:14,
             flexWrap:"wrap"
           }}
@@ -30,8 +30,8 @@ export default function Card({ children, style, title, desc, right }) {
             {title && (
               <div
                 style={{
-                  fontSize:14,
-                  fontWeight:700,
+                  fontSize:15,
+                  fontWeight:800,
                   color:COLORS.navy,
                   lineHeight:1.25
                 }}
@@ -43,7 +43,7 @@ export default function Card({ children, style, title, desc, right }) {
             {desc && (
               <div
                 style={{
-                  fontSize:12,
+                  fontSize:12.5,
                   color:COLORS.textDim,
                   marginTop:4,
                   lineHeight:1.35
@@ -63,9 +63,9 @@ export default function Card({ children, style, title, desc, right }) {
       {!title && !right && desc && (
         <div
           style={{
-            fontSize:12,
+            fontSize:12.5,
             color:COLORS.textDim,
-            marginBottom:10
+            marginBottom:12
           }}
         >
           {desc}

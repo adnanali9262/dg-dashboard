@@ -6,17 +6,17 @@ export default function CustomTooltip({ active, payload, label, unit = "" }) {
   return (
     <div
       style={{
-        background: "#FFFFFF",
+        background: "linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)",
         border: `1px solid ${COLORS.panelEdge}`,
-        borderRadius: 8,
+        borderRadius: 10,
         boxShadow: COLORS.shadow,
-        padding: "9px 12px",
+        padding: "10px 13px",
         fontFamily: "'IBM Plex Mono', monospace",
         fontSize: 12,
         color: COLORS.text,
       }}
     >
-      <div style={{ color: COLORS.textDim, marginBottom: 5 }}>{label}</div>
+      <div style={{ color: COLORS.navy, marginBottom: 6, fontWeight: 700 }}>{label}</div>
       {payload.map((p, i) => (
         <div key={i} style={{ color: p.color, lineHeight: 1.45 }}>
           {p.name}: {p.value ?? "-"}{unit ? ` ${unit}` : ""}

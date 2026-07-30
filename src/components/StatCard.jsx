@@ -14,14 +14,14 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = "red", 
       style={{
         background: `linear-gradient(180deg, ${COLORS.panel} 0%, ${COLORS.panelSoft} 100%)`,
         border: `1px solid ${COLORS.panelEdge}`,
-        borderRadius: 10,
+        borderRadius: 14,
         boxShadow: COLORS.shadowSoft,
-        padding: "15px 16px",
+        padding: "16px 17px",
         display: "flex",
         alignItems: "flex-start",
         gap: 12,
-        minWidth: 170,
-        flex: "1 1 170px",
+        minWidth: 180,
+        flex: "1 1 180px",
         position: "relative",
         overflow: "hidden",
       }}
@@ -39,9 +39,9 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = "red", 
 
       <div
         style={{
-          width: 36,
-          height: 36,
-          borderRadius: 8,
+          width: 40,
+          height: 40,
+          borderRadius: 10,
           background: `${tint}18`,
           border: `1px solid ${tint}22`,
           display: "flex",
@@ -56,8 +56,8 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = "red", 
       <div style={{ minWidth: 0 }}>
         <div
           style={{
-            fontSize: 22,
-            fontWeight: 700,
+            fontSize: 24,
+            fontWeight: 800,
             color: resolvedValueColor,
             lineHeight: 1.05,
             letterSpacing: 0,
@@ -68,7 +68,7 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = "red", 
 
         <div
           style={{
-            fontSize: 11.5,
+            fontSize: 11.75,
             color: COLORS.textDim,
             marginTop: 6,
             lineHeight: 1.25,
