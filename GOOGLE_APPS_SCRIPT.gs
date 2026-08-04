@@ -12,6 +12,8 @@
 
 const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 const SPREADSHEET = SpreadsheetApp.getActiveSpreadsheet();
+const REPAIR_HISTORY_SHEET_NAMES = ["DG repair History", "DG Repair History", "DG_repair_History"];
+const ID_HEADER = "id";
 
 /**
  * Main entry point for GET/POST requests
@@ -59,6 +61,10 @@ function handleGetData(sheetName) {
   if (!sheet) {
     return jsonResponse({ error: "Sheet not found: " + sheetName }, 404);
   }
+
+  if (isRepairHistorySheet(sheetName)) {
+    ensureIdColumnAndBackfill(sheet);
+  }
   
   const data = sheetToJSON(sheet);
   return jsonResponse({ success: true, data: data, count: data.length });
@@ -74,6 +80,12 @@ function handleAppendData(sheetName, e) {
   }
   
   const payload = JSON.parse(e.postData.contents);
+
+  if (isRepairHistorySheet(sheetName)) {
+    ensureIdColumnAndBackfill(sheet);
+    payload[ID_HEADER] = String(payload[ID_HEADER] || generateRowId());
+  }
+
   const headers = getHeaders(sheet);
   
   // Validate payload
@@ -101,8 +113,12 @@ function handleUpdateData(sheetName, e) {
   }
   
   const payload = JSON.parse(e.postData.contents);
-  const id = e.parameter.id;
+  const id = String(e.parameter.id || payload[ID_HEADER] || "").trim();
   const rowNumber = Number(e.parameter.row || 0);
+
+  if (isRepairHistorySheet(sheetName)) {
+    ensureIdColumnAndBackfill(sheet);
+  }
 
   if (rowNumber > 1) {
     const headers = getHeaders(sheet);
@@ -125,7 +141,7 @@ function handleUpdateData(sheetName, e) {
   }
   
   const headers = getHeaders(sheet);
-  const idIndex = headers.indexOf("id") + 1; // Convert to 1-based index
+  const idIndex = headers.indexOf(ID_HEADER) + 1; // Convert to 1-based index
   
   if (idIndex === 0) {
     return jsonResponse({ error: "Sheet must have an 'id' column to update" }, 400);
@@ -193,6 +209,48 @@ function getSheet(sheetName) {
   return SPREADSHEET.getSheets().find((sheet) =>
     sheet.getName().toString().trim().toLowerCase() === normalizedName
   );
+}
+
+function isRepairHistorySheet(sheetName) {
+  const normalized = String(sheetName || "").trim().toLowerCase();
+  return REPAIR_HISTORY_SHEET_NAMES.some((name) => String(name).trim().toLowerCase() === normalized);
+}
+
+function generateRowId() {
+  return Utilities.getUuid();
+}
+
+function ensureIdColumnAndBackfill(sheet) {
+  const headers = getHeaders(sheet);
+  let idIndex = headers.indexOf(ID_HEADER);
+
+  if (idIndex === -1) {
+    idIndex = headers.length;
+    sheet.getRange(1, idIndex + 1).setValue(ID_HEADER);
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    return;
+  }
+
+  const idColumnValues = sheet.getRange(2, idIndex + 1, lastRow - 1, 1).getValues();
+  const updates = [];
+  let hasMissingIds = false;
+
+  for (let i = 0; i < idColumnValues.length; i++) {
+    const existing = String(idColumnValues[i][0] || "").trim();
+    if (existing) {
+      updates.push([existing]);
+      continue;
+    }
+    updates.push([generateRowId()]);
+    hasMissingIds = true;
+  }
+
+  if (hasMissingIds) {
+    sheet.getRange(2, idIndex + 1, updates.length, 1).setValues(updates);
+  }
 }
 
 /**

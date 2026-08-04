@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
-import { getDailyMeterReadings, getSummaryData, getFuelBalanceData, getPMRTrackingData, getCPData, getFuelPerformanceData, getRepairHistoryData, appendRepairHistoryEntry, updateRepairHistoryEntry, deleteRepairHistoryEntry } from "./api/googleSheets";
+import { getDailyMeterReadings, getSummaryData, getFuelBalanceData, getPMRTrackingData, getCPData, getFuelPerformanceData, getRepairHistoryData, appendRepairHistoryEntry, updateRepairHistoryEntry } from "./api/googleSheets";
 
  import Card from "./components/Card";
 import { COLORS } from "./styles/colors";
@@ -1337,20 +1337,10 @@ useEffect(() => {
     setRepairs(list);
   }, []);
  
-  const updateRepair = useCallback(async (rowNumber, entry) => {
-    await updateRepairHistoryEntry(rowNumber, entry);
+  const updateRepair = useCallback(async (entryId, entry) => {
+    await updateRepairHistoryEntry(entryId, entry);
     const list = await getRepairHistoryData();
     setRepairs(list);
-  }, []);
-
-  const deleteRepair = useCallback(async (id, rowNumber) => {
-    if (rowNumber) {
-      await deleteRepairHistoryEntry(rowNumber);
-      const list = await getRepairHistoryData();
-      setRepairs(list);
-      return;
-    }
-    setRepairs((prev) => prev.filter((r) => r.id !== id));
   }, []);
  
   const siteSeries = useMemo(() => {
@@ -2291,7 +2281,6 @@ useEffect(() => {
             siteNames={derived ? derived.siteNames : []}
             onAdd={addRepair}
             onUpdate={updateRepair}
-            onDelete={deleteRepair}
           />
         )}
  

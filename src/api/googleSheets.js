@@ -1,5 +1,5 @@
 const API_URL =
-  "https://script.google.com/macros/s/AKfycbwpLLfcMe-FdV8ytdwghq7rEivnvB5YQiHnu0uZGlaWn8HWGnqGNhuA7mufbU0yFsrX0A/exec";
+  "https://script.google.com/macros/s/AKfycbwh-KObXX_5dNg98QE7ZUG3e3S3wX64F4p7qcCJIxEiKVemhfThvrbY6HTQUVLSYJ6aIA/exec";
 
 const DAILY_METER_SHEET_NAMES = ["Daily Meter Readings", "Daily_Meter_Reading", "Daily Meter Reading"];
 
@@ -112,6 +112,73 @@ const REPAIR_HISTORY_HEADERS = {
   responsibleType: "by vendor or PTCL ",
   vendorName: "(if vendor? its name)",
   ptclStaffName: "if PTCL staff ? its name",
+};
+
+const REPAIR_HISTORY_HEADER_ALIASES = {
+  exchangeName: [
+    "Exchange Name",
+    "exchangeName",
+    "Site",
+    "site",
+  ],
+  dgNameCapacity: [
+    "DG name/Capacity",
+    "DG name / Capacity",
+    "DG name /Capacity",
+    "DG Name/Capacity",
+    "DG Name / Capacity",
+    "dgNameCapacity",
+  ],
+  faultOccurrenceDate: [
+    "Fault occurance date",
+    "fault occurance date",
+    "Fault Occurance Date",
+    "faultOccurrenceDate",
+    "date",
+    "Date",
+  ],
+  faultOccurrenceReading: [
+    "fault occurance M/R reading",
+    "Fault occurance M/R reading",
+    "faultOccurrenceReading",
+  ],
+  faultDetail: [
+    "detail of fault",
+    "Detail of fault",
+    "faultDetail",
+    "issue",
+  ],
+  status: [
+    "resolution pending/in progress/Completed",
+    "Resolution pending / in progress / Completed",
+    "status",
+  ],
+  faultClearanceDate: [
+    "Fault clearance date (if applicable)",
+    "Fault clearance date",
+    "faultClearanceDate",
+  ],
+  faultClearanceReading: [
+    "fault clearance M/R reading  (if applicable)",
+    "Fault clearance M/R reading",
+    "faultClearanceReading",
+  ],
+  responsibleType: [
+    "by vendor or PTCL ",
+    "By Vendor or PTCL",
+    "responsibleType",
+  ],
+  vendorName: [
+    "(if vendor? its name)",
+    "Vendor name",
+    "vendorName",
+  ],
+  ptclStaffName: [
+    "if PTCL staff ? its name",
+    "if PTCL staff ? its name)",
+    "PTCL staff name",
+    "ptclStaffName",
+  ],
 };
 
 function getHeaderIndex(headers, patterns) {
@@ -231,10 +298,24 @@ export async function getFuelBalanceData() {
 }
 
 function getRowValue(row, aliases) {
+  const normalizedMap = {};
+  Object.keys(row || {}).forEach((key) => {
+    const normalized = String(key || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (normalized) {
+      normalizedMap[normalized] = row[key];
+    }
+  });
+
   for (const alias of aliases) {
     const value = row?.[alias];
     if (value !== undefined && value !== null && String(value).trim() !== "") {
       return String(value).trim();
+    }
+
+    const normalizedAlias = String(alias || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const normalizedValue = normalizedMap[normalizedAlias];
+    if (normalizedValue !== undefined && normalizedValue !== null && String(normalizedValue).trim() !== "") {
+      return String(normalizedValue).trim();
     }
   }
   return "";
@@ -390,36 +471,44 @@ export async function getFuelPerformanceData() {
 
 function normalizeRepairHistoryRow(row) {
   return {
-    id: String(row.id || row.__rowNumber || Date.now()),
+    id: String(getRowValue(row, ["id", "ID", "Id"]) || row.__rowNumber || Date.now()),
     rowNumber: Number(row.__rowNumber || row.rowNumber || 0) || 0,
-    exchangeName: getRowValue(row, [REPAIR_HISTORY_HEADERS.exchangeName, "exchangeName", "site"]),
-    dgNameCapacity: getRowValue(row, [REPAIR_HISTORY_HEADERS.dgNameCapacity, "dgNameCapacity"]),
-    faultOccurrenceDate: getRowValue(row, [REPAIR_HISTORY_HEADERS.faultOccurrenceDate, "faultOccurrenceDate", "date"]),
-    faultOccurrenceReading: getRowValue(row, [REPAIR_HISTORY_HEADERS.faultOccurrenceReading, "faultOccurrenceReading"]),
-    faultDetail: getRowValue(row, [REPAIR_HISTORY_HEADERS.faultDetail, "faultDetail", "issue"]),
-    status: getRowValue(row, [REPAIR_HISTORY_HEADERS.status, "status"]) || "Pending",
-    faultClearanceDate: getRowValue(row, [REPAIR_HISTORY_HEADERS.faultClearanceDate, "faultClearanceDate"]),
-    faultClearanceReading: getRowValue(row, [REPAIR_HISTORY_HEADERS.faultClearanceReading, "faultClearanceReading"]),
-    responsibleType: getRowValue(row, [REPAIR_HISTORY_HEADERS.responsibleType, "responsibleType"]),
-    vendorName: getRowValue(row, [REPAIR_HISTORY_HEADERS.vendorName, "vendorName"]),
-    ptclStaffName: getRowValue(row, [REPAIR_HISTORY_HEADERS.ptclStaffName, "ptclStaffName"]),
+    exchangeName: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.exchangeName),
+    dgNameCapacity: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.dgNameCapacity),
+    faultOccurrenceDate: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.faultOccurrenceDate),
+    faultOccurrenceReading: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.faultOccurrenceReading),
+    faultDetail: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.faultDetail),
+    status: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.status) || "Pending",
+    faultClearanceDate: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.faultClearanceDate),
+    faultClearanceReading: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.faultClearanceReading),
+    responsibleType: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.responsibleType),
+    vendorName: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.vendorName),
+    ptclStaffName: getRowValue(row, REPAIR_HISTORY_HEADER_ALIASES.ptclStaffName),
   };
 }
 
 function toRepairHistoryPayload(entry) {
-  return {
-    [REPAIR_HISTORY_HEADERS.exchangeName]: entry.exchangeName || "",
-    [REPAIR_HISTORY_HEADERS.dgNameCapacity]: entry.dgNameCapacity || "",
-    [REPAIR_HISTORY_HEADERS.faultOccurrenceDate]: entry.faultOccurrenceDate || "",
-    [REPAIR_HISTORY_HEADERS.faultOccurrenceReading]: entry.faultOccurrenceReading || "",
-    [REPAIR_HISTORY_HEADERS.faultDetail]: entry.faultDetail || "",
-    [REPAIR_HISTORY_HEADERS.status]: entry.status || "Pending",
-    [REPAIR_HISTORY_HEADERS.faultClearanceDate]: entry.faultClearanceDate || "",
-    [REPAIR_HISTORY_HEADERS.faultClearanceReading]: entry.faultClearanceReading || "",
-    [REPAIR_HISTORY_HEADERS.responsibleType]: entry.responsibleType || "",
-    [REPAIR_HISTORY_HEADERS.vendorName]: entry.vendorName || "",
-    [REPAIR_HISTORY_HEADERS.ptclStaffName]: entry.ptclStaffName || "",
+  const payload = {};
+  const assignValue = (aliases, value) => {
+    aliases.forEach((alias) => {
+      payload[alias] = value;
+    });
   };
+
+  payload.id = String(entry.id || "");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.exchangeName, entry.exchangeName || "");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.dgNameCapacity, entry.dgNameCapacity || "");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.faultOccurrenceDate, entry.faultOccurrenceDate || "");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.faultOccurrenceReading, entry.faultOccurrenceReading || "");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.faultDetail, entry.faultDetail || "");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.status, entry.status || "Pending");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.faultClearanceDate, entry.faultClearanceDate || "");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.faultClearanceReading, entry.faultClearanceReading || "");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.responsibleType, entry.responsibleType || "");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.vendorName, entry.vendorName || "");
+  assignValue(REPAIR_HISTORY_HEADER_ALIASES.ptclStaffName, entry.ptclStaffName || "");
+
+  return payload;
 }
 
 export async function getRepairHistoryData() {
@@ -443,46 +532,71 @@ export async function getRepairHistoryData() {
 export async function appendRepairHistoryEntry(entry) {
   const payload = toRepairHistoryPayload(entry);
   const sheetName = REPAIR_HISTORY_SHEET_NAMES[0];
-  const response = await fetch(`${API_URL}?action=appendData&sheet=${encodeURIComponent(sheetName)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    throw new Error("Failed to append repair history entry.");
+  try {
+    const response = await fetch(`${API_URL}?action=appendData&sheet=${encodeURIComponent(sheetName)}`, {
+      method: "POST",
+      // Apps Script endpoints often reject preflighted JSON in browsers; text/plain avoids OPTIONS preflight.
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to append repair history entry.");
+    }
+    const result = await response.json();
+    if (result?.error) throw new Error(result.error);
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error("Network error while saving. Please refresh and try again.");
+    }
+    throw error;
   }
-  const result = await response.json();
-  if (result?.error) throw new Error(result.error);
-  return result;
 }
 
-export async function updateRepairHistoryEntry(rowNumber, entry) {
+export async function updateRepairHistoryEntry(entryId, entry) {
+  if (!entryId) {
+    throw new Error("Missing entry id for update.");
+  }
   const payload = toRepairHistoryPayload(entry);
   const sheetName = REPAIR_HISTORY_SHEET_NAMES[0];
-  const response = await fetch(`${API_URL}?action=updateData&sheet=${encodeURIComponent(sheetName)}&row=${encodeURIComponent(rowNumber)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    throw new Error("Failed to update repair history entry.");
+  try {
+    const response = await fetch(`${API_URL}?action=updateData&sheet=${encodeURIComponent(sheetName)}&id=${encodeURIComponent(entryId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to update repair history entry.");
+    }
+    const result = await response.json();
+    if (result?.error) throw new Error(result.error);
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error("Network error while updating. Please refresh and try again.");
+    }
+    throw error;
   }
-  const result = await response.json();
-  if (result?.error) throw new Error(result.error);
-  return result;
 }
 
 export async function deleteRepairHistoryEntry(rowNumber) {
   const sheetName = REPAIR_HISTORY_SHEET_NAMES[0];
-  const response = await fetch(`${API_URL}?action=deleteData&sheet=${encodeURIComponent(sheetName)}&row=${encodeURIComponent(rowNumber)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
-  if (!response.ok) {
-    throw new Error("Failed to delete repair history entry.");
+  try {
+    const response = await fetch(`${API_URL}?action=deleteData&sheet=${encodeURIComponent(sheetName)}&row=${encodeURIComponent(rowNumber)}`, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({}),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to delete repair history entry.");
+    }
+    const result = await response.json();
+    if (result?.error) throw new Error(result.error);
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error("Network error while deleting. Please refresh and try again.");
+    }
+    throw error;
   }
-  const result = await response.json();
-  if (result?.error) throw new Error(result.error);
-  return result;
 }

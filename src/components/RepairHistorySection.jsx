@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2, X, Pencil } from "lucide-react";
+import { Plus, X, Pencil } from "lucide-react";
 import Card from "./Card";
 import { COLORS } from "../styles/colors";
 
@@ -34,17 +34,28 @@ const inputStyle = {
   boxSizing: "border-box",
 };
 
-export default function RepairHistorySection({ repairs, loading, siteNames, onAdd, onUpdate, onDelete }) {
+export default function RepairHistorySection({ repairs, loading, siteNames, onAdd, onUpdate }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm());
-  const [editingRowNumber, setEditingRowNumber] = useState(0);
+  const [editingId, setEditingId] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
+  const createRepairId = () => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  };
  
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
  
   const startNewEntry = () => {
     setForm(emptyForm());
-    setEditingRowNumber(0);
+    setEditingId("");
+    setIsEditing(false);
+    setSubmitError("");
     setShowForm((s) => !s);
   };
 
@@ -62,23 +73,37 @@ export default function RepairHistorySection({ repairs, loading, siteNames, onAd
       vendorName: entry.vendorName || "",
       ptclStaffName: entry.ptclStaffName || "",
     });
-    setEditingRowNumber(Number(entry.rowNumber || 0));
+    setEditingId(String(entry.id || ""));
+    setIsEditing(true);
+    setSubmitError("");
     setShowForm(true);
   };
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.exchangeName.trim() || !form.dgNameCapacity.trim() || !form.faultDetail.trim()) return;
+    if (!form.exchangeName.trim() || !form.dgNameCapacity.trim() || !form.faultDetail.trim()) {
+      setSubmitError("Please fill Exchange Name, DG name/Capacity, and Detail of fault before saving.");
+      return;
+    }
+    setSubmitError("");
     setSubmitting(true);
     try {
-      if (editingRowNumber && onUpdate) {
-        await onUpdate(editingRowNumber, form);
+      if (isEditing) {
+        if (!editingId || !onUpdate) {
+          setSubmitError("Missing entry id. Please refresh and try editing again.");
+          return;
+        }
+        await onUpdate(editingId, { ...form, id: editingId });
       } else {
-        await onAdd({ ...form, id: Date.now().toString() });
+        await onAdd({ ...form, id: createRepairId() });
       }
       setForm(emptyForm());
-      setEditingRowNumber(0);
+      setEditingId("");
+      setIsEditing(false);
       setShowForm(false);
+      setSubmitError("");
+    } catch (error) {
+      setSubmitError(error?.message || "Could not save this entry to Google Sheet. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -185,9 +210,15 @@ export default function RepairHistorySection({ repairs, loading, siteNames, onAd
                 border: "none", cursor: "pointer", background: COLORS.green, color: "#fff",
                 borderRadius: 8, padding: "8px 16px", fontSize: 12.5, fontWeight: 600,
               }} disabled={submitting}>
-                {submitting ? "Saving..." : editingRowNumber ? "Update entry" : "Save entry"}
+                {submitting ? "Saving..." : isEditing ? "Update entry" : "Save entry"}
               </button>
             </div>
+
+            {submitError && (
+              <div style={{ color: COLORS.red, fontSize: 12.5, fontWeight: 600 }}>
+                {submitError}
+              </div>
+            )}
           </form>
         )}
       </Card>
@@ -242,12 +273,6 @@ export default function RepairHistorySection({ repairs, loading, siteNames, onAd
                   style={{ border: "none", background: "transparent", cursor: "pointer", padding: 4 }}
                 >
                   <Pencil size={14} color={COLORS.textDim} />
-                </button>
-                <button
-                  onClick={() => onDelete(r.id, r.rowNumber)} title="Delete"
-                  style={{ border: "none", background: "transparent", cursor: "pointer", padding: 4 }}
-                >
-                  <Trash2 size={14} color={COLORS.textDim} />
                 </button>
               </div>
             </div>
