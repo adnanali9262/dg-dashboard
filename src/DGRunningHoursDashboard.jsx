@@ -609,8 +609,6 @@ useEffect(() => {
     return null;
   }
 
-  const today = new Date();
-  const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const datedMeterData = meterData
     .map((item) => ({ ...item, parsedDate: item.date ? new Date(item.date) : null }))
     .filter((item) => item.parsedDate && !Number.isNaN(item.parsedDate.getTime()));
@@ -620,6 +618,8 @@ useEffect(() => {
   }, null);
 
   const latestDateStr = latestDate ? latestDate.toISOString().split("T")[0] : "";
+  const latestMonthYear = latestDate ? latestDate.getFullYear() : null;
+  const latestMonthIndex = latestDate ? latestDate.getMonth() : null;
   
   // Calculate totals
   const totalRunHours = meterData.reduce(
@@ -633,7 +633,7 @@ useEffect(() => {
 
   // This month's hours - simple approach: filter by month
   const monthlyHours = datedMeterData
-    .filter(item => item.parsedDate >= thisMonthStart && item.parsedDate <= today)
+    .filter(item => item.parsedDate.getFullYear() === latestMonthYear && item.parsedDate.getMonth() === latestMonthIndex)
     .reduce((sum, item) => sum + Number(item.dailyHours || 0), 0);
 
   const totalMeterReading = meterData.reduce(
