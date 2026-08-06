@@ -625,6 +625,33 @@ function parseGVizPayload(text) {
   return JSON.parse(text.slice(start, end + 1));
 }
 
+function formatMSAGName(rawValue) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return "";
+
+  let cleaned = raw;
+  if (cleaned.includes("//")) {
+    cleaned = cleaned.split("//").pop() || cleaned;
+  }
+
+  // Remove common technical tags and convert separators to spaces.
+  cleaned = cleaned
+    .replace(/\b(?:MT|MTR|MSAG|BWR|BWN)\b/gi, " ")
+    .replace(/[_./-]+/g, " ")
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, " ")
+    .replace(/\b\d+\b/g, " ");
+
+  const words = cleaned
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter(Boolean)
+    .filter((word) => word.length > 1)
+    .filter((word) => !/^[A-Z]$/i.test(word));
+
+  const readable = words.join(" ").trim();
+  return readable || raw;
+}
+
 export async function getMSAGMonthlyData() {
   try {
     const sheetId = "1D34nuWkngNhA05O1O2t2nQ36wyLYo-FaCfEBpOxZS1o";
@@ -649,7 +676,8 @@ export async function getMSAGMonthlyData() {
         const durationCell = cells[13] || null;
         const fuelCell = cells[14] || null;
 
-        const msagName = String(msagCell?.f || msagCell?.v || "").trim();
+        const msagRaw = String(msagCell?.f || msagCell?.v || "").trim();
+        const msagName = formatMSAGName(msagRaw);
         const generatorNumber = parseNumber(generatorCell?.v ?? generatorCell?.f ?? "");
         const qtyLiters = parseNumber(qtyCell?.v ?? qtyCell?.f ?? "");
         const usageHours = parseHourTextToNumber(durationCell?.f || durationCell?.v || "");
@@ -658,6 +686,7 @@ export async function getMSAGMonthlyData() {
 
         return {
           msagName,
+          msagRaw,
           generator: generatorNumber > 0 ? `Genset ${generatorNumber}` : "Unknown",
           generatorNumber,
           operationDate,
@@ -666,7 +695,7 @@ export async function getMSAGMonthlyData() {
           qtyLiters,
         };
       })
-      .filter((item) => item.msagName && item.msagName.toLowerCase() !== "msag name")
+      .filter((item) => item.msagRaw && item.msagRaw.toLowerCase() !== "msag name")
       .filter((item) => item.usageHours > 0 || item.fuelConsumption > 0 || item.qtyLiters > 0);
 
     return result;

@@ -39,12 +39,77 @@ function toLocalDateKey(value) {
   return `${year}-${month}-${day}`;
 }
 
+function siteAliasKey(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+const SITE_DISPLAY_NAME_ENTRIES = [
+  ["P12BNRBNRM008//MTR.BWN.HaroonabadRoad.MSAG.01", "Model town"],
+  ["P12BNRBNRM009//10.139.101.2-MT-BWN-Pull4-A-D", "Pull 4AD"],
+  ["P12BNRBNRM002//10.139.50.50-MT-BWP-CTN13Gjia-H-M", "13 Gajyani"],
+  ["P12BNRBNRM001//10.139.50.46-MT-BWN-HadCk73-H-M", "chak 73/4-R"],
+  ["P12BNRBNRM050//10.139.89.50-MT-BWN-SugMilRd-Z-M", "Sugar Mill Road"],
+  ["P12BNRBNRM051//10.139.89.46-MT-BWN-OffColny-Z-M", "Officers Colony"],
+  ["P12BNRBNRM054//10.139.71.186-MT-BWN-BhwaliChk-Z-M", "Bahawali Chowk"],
+  ["P12BNRBNRM056//10.139.71.190-MT-BWN-RamzaniaMsjd-Z-M", "Ramzania Masjid"],
+  ["P12BNRBNRM057//10.139.61.78-MT-BWN-GoshalaChk-Z-M", "Goshala Chowk"],
+  ["P12BNRBNRM058//10.139.62.78-MT-BWN-CityHousingScheme-Z-M", "City Housing Scheme"],
+  ["P12BWPHPRM050//10.139.36.14-MTR-BWP-VehariRdHasilpur-H-M", "Vehari Road, Hasilpur"],
+  ["P12BNRBNRM059//10.139.126.190-MT-BWN-DHQHosp-A-M", "DHQ Hospital"],
+  ["P12BNRBNRM063//10.139.36.42-MT-BWN-BaldiaChowk-H-M", "Baldia Chowk"],
+  ["P12BNRBNRM062//10.139.36.46-MT-BWN-CollegeRoad-H-M", "College Road"],
+  ["P12BNRBNRM061//10.139.36.50-MT-BWN-P12BNRBNRM061-H-M", "Gulshan-e-Iqbal Chishtian"],
+  ["P12BNRBNRM064//10.139.36.54-MT-BWN-JamiaMehmoodia-H-M", "Jamia Mehmoodia"],
+  ["P12BNRBNRM067//10.139.126.214-MT-BWN-RailwayChowk1-A-M", "Railway Chowk"],
+  ["P12BNRBNRM065//10.139.126.198-MT-BWN-MubarakGate-A-M", "Mubarak Gate"],
+  ["P12BWPHPRM051//10.139.36.18-MT-BWP-KhiljiDrinkHasilPur-H-M", "Khilji Drink, Hasilpur"],
+  ["P12BNRBNRM060//10.139.52.110-MT-BWN-FqrWali-Z-M", "Faqir Wali"],
+  ["P12BNRBNRM066//10.139.126.206-MT-BWN-Minchibad1-A-M", "Minchinabad"],
+  ["12BWNHPRMSAG003//10.139.150.10-MT-BWPChowkHasilpur-H-M", "BWP Chowk, Hasilpur"],
+  ["12BWNDWAMSAG001//10.139.150.6-MT-BWR-Dahranwala-H-M", "Thana mor Dahranwala"],
+  ["P12BNRBNRM014//10.139.150.14-MT-BWR-FortAbbas-H-M", "Fort Abbas"],
+  ["P12BWPHRPM055//10.139.155.14-MTR-BHAWALNAGAR-EXHHPUR-Z-M", "Zia Shaheed Hasilpur"],
+  ["10.139.155.18-MTR-GhallaMandi-DRN-Z-M", "Ghalla Mandi, Dahranwala"],
+  ["10 139 155.22-MTR-BWN-GovtSchl-Z-M", "Govt school"],
+  ["P12BNRBNRNM51//10.139.90.102-MT-BWN-Chk296-H-M", "Chak 296/H-R"],
+  ["P12BNRBNRNM51//10.139.90.102-MT-BWN-Chk296R-Z-M", "Chak 296/H-R"],
+
+];
+
+const SITE_DISPLAY_NAME_MAP = new Map();
+SITE_DISPLAY_NAME_ENTRIES.forEach(([original, display]) => {
+  const fullKey = siteAliasKey(original);
+  if (fullKey) {
+    SITE_DISPLAY_NAME_MAP.set(fullKey, display);
+  }
+
+  if (String(original).includes("//")) {
+    const tail = String(original).split("//").pop() || "";
+    const tailKey = siteAliasKey(tail);
+    if (tailKey) {
+      SITE_DISPLAY_NAME_MAP.set(tailKey, display);
+    }
+  }
+});
+
 function normalizeSiteName(name) {
-  return String(name || "")
-    .replace(/\s+/g, " ")
-    .replace(/\s*\(\s*/g, " (")
-    .replace(/\s*\)\s*/g, ")")
-    .trim();
+  const raw = String(name || "");
+  if (!raw) return "";
+
+  const directKey = siteAliasKey(raw);
+  if (SITE_DISPLAY_NAME_MAP.has(directKey)) {
+    return SITE_DISPLAY_NAME_MAP.get(directKey);
+  }
+
+  if (raw.includes("//")) {
+    const tail = raw.split("//").pop() || "";
+    const tailKey = siteAliasKey(tail);
+    if (SITE_DISPLAY_NAME_MAP.has(tailKey)) {
+      return SITE_DISPLAY_NAME_MAP.get(tailKey);
+    }
+  }
+
+  return raw;
 }
 
 const PMR_CATEGORY_BUCKETS = [
@@ -74,6 +139,62 @@ function shortLabel(value, max = 46) {
   const text = String(value || "").trim();
   if (!text) return "";
   return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function getDayOfMonth(value) {
+  if (!value) return 0;
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) return date.getDate();
+
+  const text = String(value);
+  const ddMonYyyy = text.match(/^(\d{1,2})-[A-Za-z]{3}-\d{4}$/);
+  if (ddMonYyyy) {
+    const parsed = new Date(text);
+    if (!Number.isNaN(parsed.getTime())) return parsed.getDate();
+  }
+  return 0;
+}
+
+function parsePortableDate(value) {
+  if (!value) return null;
+
+  const asDate = value instanceof Date ? value : new Date(value);
+  if (!Number.isNaN(asDate.getTime())) return asDate;
+
+  const text = String(value || "").trim();
+  const ddMonYyyy = text.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
+  if (ddMonYyyy) {
+    const day = Number(ddMonYyyy[1]);
+    const mon = ddMonYyyy[2].toLowerCase();
+    const year = Number(ddMonYyyy[3]);
+    const monthMap = {
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
+    };
+    if (Object.prototype.hasOwnProperty.call(monthMap, mon)) {
+      return new Date(year, monthMap[mon], day);
+    }
+  }
+
+  return null;
+}
+
+function getPortableSiteLabel(msagName, generatorNumber) {
+  const site = String(msagName || "").trim() || "Unknown";
+
+  const gen = Number(generatorNumber || 0);
+  const suffix = gen > 0 ? `#${gen}` : "#?";
+  return `${site} ${suffix}`;
 }
 
 function formatPmDate(value) {
@@ -1084,7 +1205,7 @@ useEffect(() => {
   const portableByMSAG = useMemo(() => {
     const grouped = new Map();
     (Array.isArray(msagMonthlyData) ? msagMonthlyData : []).forEach((row) => {
-      const key = normalizeSiteName(row.msagName || "");
+      const key = normalizeSiteName(row.msagRaw || row.msagName || "");
       if (!key) return;
       if (!grouped.has(key)) {
         grouped.set(key, { name: key, usageHours: 0, fuelConsumption: 0 });
@@ -1128,25 +1249,104 @@ useEffect(() => {
     return portableByGenerator.map((item) => item.name);
   }, [portableByGenerator]);
 
-  const portableGanttData = useMemo(() => {
-    const bySite = new Map();
+  const portableTimelineRows = useMemo(() => {
+    const bySiteGenerator = new Map();
     (Array.isArray(msagMonthlyData) ? msagMonthlyData : []).forEach((row) => {
-      const site = normalizeSiteName(row.msagName || "");
+      const site = normalizeSiteName(row.msagRaw || row.msagName || "");
       const generator = String(row.generator || "Unknown").trim() || "Unknown";
+      const generatorNumber = Number(row.generatorNumber || 0);
+      const day = getDayOfMonth(row.operationDate);
+      const usageHours = Number(row.usageHours || 0);
+      const fuelConsumption = Number(row.fuelConsumption || 0);
+
       if (!site) return;
-      if (!bySite.has(site)) {
-        bySite.set(site, { site, totalUsage: 0 });
+      if (day < 1 || day > 31) return;
+
+      const key = `${site}__${generator}`;
+      if (!bySiteGenerator.has(key)) {
+        bySiteGenerator.set(key, {
+          site,
+          generator,
+          generatorNumber,
+          label: getPortableSiteLabel(site, generatorNumber),
+          totalUsage: 0,
+          pointsByDay: new Map(),
+        });
       }
 
-      const item = bySite.get(site);
-      const existing = Number(item[generator] || 0);
-      const hours = Number(row.usageHours || 0);
-      item[generator] = round2(existing + hours);
-      item.totalUsage = round2(Number(item.totalUsage || 0) + hours);
+      const item = bySiteGenerator.get(key);
+      const existing = item.pointsByDay.get(day) || { day, usageHours: 0, fuelConsumption: 0 };
+      existing.usageHours = round2(existing.usageHours + usageHours);
+      existing.fuelConsumption = round2(existing.fuelConsumption + fuelConsumption);
+      item.pointsByDay.set(day, existing);
+      item.totalUsage = round2(item.totalUsage + usageHours);
     });
 
-    return [...bySite.values()].sort((a, b) => (b.totalUsage - a.totalUsage) || a.site.localeCompare(b.site));
+    return [...bySiteGenerator.values()]
+      .map((row) => ({
+        ...row,
+        points: [...row.pointsByDay.values()]
+          .sort((a, b) => a.day - b.day)
+          .map((point) => ({
+            ...point,
+            // Keep markers compact but show longer runs with wider blocks.
+            widthPx: Math.max(4, Math.min(14, Math.round(point.usageHours * 3))),
+          })),
+      }))
+      .sort((a, b) => (b.totalUsage - a.totalUsage) || a.label.localeCompare(b.label));
   }, [msagMonthlyData]);
+
+  const portableSummary = useMemo(() => {
+    const rows = Array.isArray(msagMonthlyData) ? msagMonthlyData : [];
+    const deployedSiteKeys = new Set();
+    let fuelConsumed = 0;
+    const monthKeys = new Set();
+
+    rows.forEach((row) => {
+      const siteName = normalizeSiteName(row.msagRaw || row.msagName || "");
+      if (siteName) {
+        deployedSiteKeys.add(siteMatchKey(siteName));
+      }
+
+      fuelConsumed += Number(row.fuelConsumption || 0);
+
+      const parsedDate = parsePortableDate(row.operationDate);
+      if (parsedDate) {
+        monthKeys.add(`${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, "0")}`);
+      }
+    });
+
+    const monthLabel = (() => {
+      if (monthKeys.size === 0) return "Month not found";
+      const sortedKeys = [...monthKeys].sort();
+      const formatKey = (key) => {
+        const [yearText, monthText] = key.split("-");
+        const year = Number(yearText);
+        const month = Number(monthText);
+        return new Date(year, Math.max(0, month - 1), 1).toLocaleDateString("en-PK", {
+          month: "long",
+          year: "numeric",
+        });
+      };
+
+      if (sortedKeys.length === 1) return formatKey(sortedKeys[0]);
+      return `${formatKey(sortedKeys[0])} to ${formatKey(sortedKeys[sortedKeys.length - 1])}`;
+    })();
+
+    const balanceRows = (fuelBalanceDerived?.totals || []).filter((item) => deployedSiteKeys.has(siteMatchKey(item.name)));
+    const roundedOpening = round2(balanceRows.reduce((sum, item) => sum + Number(item.openingBalance || 0), 0));
+    const roundedClosing = round2(balanceRows.reduce((sum, item) => sum + Number(item.fuelBalance || 0), 0));
+    const roundedConsumed = round2(fuelConsumed);
+
+    return {
+      siteCount: deployedSiteKeys.size,
+      deploymentCount: rows.length,
+      openingBalance: roundedOpening,
+      closingBalance: roundedClosing,
+      fuelConsumed: roundedConsumed,
+      monthLabel,
+    };
+  }, [msagMonthlyData, fuelBalanceDerived]);
 
   const generatorColorMap = useMemo(() => {
     const palette = ["#174EA6", "#C5221F", "#0B8043", "#B06000", "#7E57C2", "#00838F", "#5D4037", "#546E7A"];
@@ -1717,10 +1917,14 @@ useEffect(() => {
         {section === "portable" && (
           <>
             <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
-              <StatCard icon={ClipboardList} label="MSAG Rows" value={msagMonthlyData.length} tone="navy" />
-              <StatCard icon={Activity} label="Total Usage Hours" value={round2(portableByMSAG.reduce((sum, item) => sum + item.usageHours, 0)).toFixed(2)} sub="All MSAG" tone="red" />
-              <StatCard icon={Fuel} label="Fuel Consumption" value={round2(portableByMSAG.reduce((sum, item) => sum + item.fuelConsumption, 0)).toFixed(2)} sub="Litres" tone="blue" />
-              <StatCard icon={Fuel} label="Generators" value={portableByGenerator.length} tone="green" />
+              <StatCard
+                icon={ClipboardList}
+                label="PG Sites / Deployments"
+                value={portableSummary.siteCount}
+                sub={`${portableSummary.deploymentCount} deployments | ${portableSummary.monthLabel}`}
+                tone="navy"
+              />
+              <StatCard icon={Activity} label="Total Fuel Consumed" value={portableSummary.fuelConsumed.toFixed(2)} sub="Litres" tone="blue" />
             </div>
 
             <Card title="MSAG-wise usage and fuel" desc="Highest to lowest by usage hours" style={{ marginBottom: 18 }}>
@@ -1736,8 +1940,12 @@ useEffect(() => {
                     <YAxis type="category" dataKey="name" width={320} tickFormatter={(value) => shortLabel(value, 42)} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} interval={0} />
                     <Tooltip content={<CustomTooltip />} />
                     <Legend verticalAlign="top" align="left" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "IBM Plex Sans" }} />
-                    <Bar dataKey="usageHours" name="Usage Hours" fill={COLORS.red} radius={[0, 4, 4, 0]} />
-                    <Bar dataKey="fuelConsumption" name="Fuel Consumption (L)" fill={COLORS.blue} radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="usageHours" name="Usage Hours" fill={COLORS.red} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                      <LabelList dataKey="usageHours" position="right" formatter={(value) => `${round2(value)}h`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                    </Bar>
+                    <Bar dataKey="fuelConsumption" name="Fuel Consumption (L)" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                      <LabelList dataKey="fuelConsumption" position="right" formatter={(value) => `${round2(value)}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -1754,8 +1962,12 @@ useEffect(() => {
                     <YAxis type="category" dataKey="name" width={200} tick={{ fill: COLORS.text, fontSize: 11, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} interval={0} />
                     <Tooltip content={<CustomTooltip />} />
                     <Legend verticalAlign="top" align="left" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "IBM Plex Sans" }} />
-                    <Bar dataKey="usageHours" name="Usage Hours" fill={COLORS.red} radius={[0, 4, 4, 0]} />
-                    <Bar dataKey="fuelConsumption" name="Fuel Consumption (L)" fill={COLORS.blue} radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="usageHours" name="Usage Hours" fill={COLORS.red} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                      <LabelList dataKey="usageHours" position="right" formatter={(value) => `${round2(value)}h`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                    </Bar>
+                    <Bar dataKey="fuelConsumption" name="Fuel Consumption (L)" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                      <LabelList dataKey="fuelConsumption" position="right" formatter={(value) => `${round2(value)}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -1763,20 +1975,70 @@ useEffect(() => {
               )}
             </Card>
 
-            <Card title="Site vs Generator (Gantt-style)" desc="Stacked usage hours of generators across sites" style={{ marginBottom: 0 }}>
-              {portableGanttData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={Math.max(320, portableGanttData.length * 28)}>
-                  <BarChart data={portableGanttData} layout="vertical" margin={{ top: 8, right: 24, left: 10, bottom: 0 }}>
-                    <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                    <YAxis type="category" dataKey="site" width={320} tickFormatter={(value) => shortLabel(value, 42)} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} interval={0} />
-                    <Tooltip content={<CustomTooltip unit="h" />} />
-                    <Legend verticalAlign="top" align="left" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "IBM Plex Sans" }} />
-                    {portableGeneratorKeys.map((generator) => (
-                      <Bar key={`gantt-${generator}`} dataKey={generator} name={generator} stackId="usage" fill={generatorColorMap.get(generator) || COLORS.blue} radius={[0, 2, 2, 0]} />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
+            <Card title="Site vs Generator (Gantt-style)" desc="Runs mapped on day-of-month timeline" style={{ marginBottom: 0 }}>
+              {portableTimelineRows.length > 0 ? (
+                <div
+                  style={{
+                    borderRadius: 12,
+                    background: COLORS.panel,
+                    border: `1px solid ${COLORS.panelEdge}`,
+                    padding: "12px 14px",
+                    overflowX: "auto",
+                  }}
+                >
+                  <div style={{ minWidth: 720 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", alignItems: "center", marginBottom: 8 }}>
+                      <div />
+                      <div style={{ position: "relative", height: 20 }}>
+                        {[1, 10, 20, 31].map((day) => (
+                          <span
+                            key={`day-label-${day}`}
+                            style={{
+                              position: "absolute",
+                              left: `${((day - 1) / 30) * 100}%`,
+                              transform: "translateX(-50%)",
+                              top: 0,
+                              color: COLORS.textDim,
+                              fontSize: 11,
+                              fontFamily: "IBM Plex Mono",
+                            }}
+                          >
+                            {day}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gap: 0 }}>
+                      {portableTimelineRows.map((row) => (
+                        <div key={`timeline-${row.site}-${row.generator}`} style={{ display: "grid", gridTemplateColumns: "150px 1fr", alignItems: "center", minHeight: 50 }}>
+                          <div style={{ color: COLORS.text, fontSize: 12.5, fontWeight: 600, paddingRight: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={row.label}>
+                            {row.label}
+                          </div>
+                          <div style={{ position: "relative", height: 48, borderTop: `1px solid ${COLORS.panelEdge}`, borderBottom: `1px solid ${COLORS.panelEdge}` }}>
+                            {row.points.map((point, index) => (
+                              <span
+                                key={`marker-${row.site}-${row.generator}-${point.day}-${index}`}
+                                title={`${row.label} | Day ${point.day} | Usage ${point.usageHours}h | Fuel ${point.fuelConsumption}L`}
+                                style={{
+                                  position: "absolute",
+                                  left: `${((point.day - 1) / 30) * 100}%`,
+                                  top: "50%",
+                                  transform: "translate(-50%, -50%)",
+                                  width: point.widthPx,
+                                  height: 14,
+                                  borderRadius: 2,
+                                  background: generatorColorMap.get(row.generator) || COLORS.blue,
+                                  boxShadow: "0 0 0 1px rgba(16,36,62,0.08) inset",
+                                }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>No site-generator usage data found.</div>
               )}
