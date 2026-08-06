@@ -600,3 +600,78 @@ export async function deleteRepairHistoryEntry(rowNumber) {
     throw error;
   }
 }
+
+function parseHourTextToNumber(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return 0;
+  const hours = Number(match[1] || 0);
+  const minutes = Number(match[2] || 0);
+  return hours + (minutes / 60);
+}
+
+function parseNumber(value) {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const normalized = String(value).replace(/[^0-9.-]/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseGVizPayload(text) {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("Invalid MSAG Monthly response format.");
+  return JSON.parse(text.slice(start, end + 1));
+}
+
+export async function getMSAGMonthlyData() {
+  try {
+    const sheetId = "1D34nuWkngNhA05O1O2t2nQ36wyLYo-FaCfEBpOxZS1o";
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?sheet=${encodeURIComponent("MSAG Monthly")}&tqx=out:json`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error("Failed to load MSAG Monthly data.");
+    }
+
+    const payloadText = await response.text();
+    const payload = parseGVizPayload(payloadText);
+    const rows = payload?.table?.rows || [];
+
+    const result = rows
+      .map((row) => {
+        const cells = Array.isArray(row?.c) ? row.c : [];
+
+        const qtyCell = cells[4] || null;
+        const operationDateCell = cells[5] || null;
+        const msagCell = cells[6] || null;
+        const generatorCell = cells[10] || null;
+        const durationCell = cells[13] || null;
+        const fuelCell = cells[14] || null;
+
+        const msagName = String(msagCell?.f || msagCell?.v || "").trim();
+        const generatorNumber = parseNumber(generatorCell?.v ?? generatorCell?.f ?? "");
+        const qtyLiters = parseNumber(qtyCell?.v ?? qtyCell?.f ?? "");
+        const usageHours = parseHourTextToNumber(durationCell?.f || durationCell?.v || "");
+        const fuelConsumption = parseNumber(fuelCell?.v ?? fuelCell?.f ?? "");
+        const operationDate = String(operationDateCell?.f || operationDateCell?.v || "").trim();
+
+        return {
+          msagName,
+          generator: generatorNumber > 0 ? `Genset ${generatorNumber}` : "Unknown",
+          generatorNumber,
+          operationDate,
+          usageHours,
+          fuelConsumption,
+          qtyLiters,
+        };
+      })
+      .filter((item) => item.msagName && item.msagName.toLowerCase() !== "msag name")
+      .filter((item) => item.usageHours > 0 || item.fuelConsumption > 0 || item.qtyLiters > 0);
+
+    return result;
+  } catch (error) {
+    console.error("✗ Error in getMSAGMonthlyData:", error);
+    return [];
+  }
+}

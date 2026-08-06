@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import * as XLSX from "xlsx";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Legend,
-  ResponsiveContainer, ReferenceLine
+  ResponsiveContainer, ReferenceLine, Cell
 } from "recharts";
 import { parseWorkbook } from "./services/excelParser";
 import {
@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
-import { getDailyMeterReadings, getSummaryData, getFuelBalanceData, getPMRTrackingData, getCPData, getFuelPerformanceData, getRepairHistoryData, appendRepairHistoryEntry, updateRepairHistoryEntry } from "./api/googleSheets";
+import { getDailyMeterReadings, getSummaryData, getFuelBalanceData, getPMRTrackingData, getCPData, getFuelPerformanceData, getRepairHistoryData, appendRepairHistoryEntry, updateRepairHistoryEntry, getMSAGMonthlyData } from "./api/googleSheets";
 
  import Card from "./components/Card";
 import { COLORS } from "./styles/colors";
@@ -68,6 +68,12 @@ function siteMatchKey(name) {
 
 function round2(value) {
   return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function shortLabel(value, max = 46) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
 function formatPmDate(value) {
@@ -437,6 +443,9 @@ export default function DGRunningHoursDashboard() {
   const [cpData, setCpData] = useState([]);
   const [cpLoading, setCpLoading] = useState(true);
   const [cpError, setCpError] = useState("");
+  const [msagMonthlyData, setMsagMonthlyData] = useState([]);
+  const [msagLoading, setMsagLoading] = useState(true);
+  const [msagError, setMsagError] = useState("");
   const [selectedCpManager, setSelectedCpManager] = useState("All");
   const [selectedCpExecutive, setSelectedCpExecutive] = useState("All");
   const [selectedCpMonth, setSelectedCpMonth] = useState("All");
@@ -451,6 +460,17 @@ export default function DGRunningHoursDashboard() {
   const [selectedFuelSiteType, setSelectedFuelSiteType] = useState("All");
   const [selectedFuelSite, setSelectedFuelSite] = useState("All");
   const [expandedExecutives, setExpandedExecutives] = useState({});
+  const LOW_FUEL_THRESHOLD_STORAGE_KEY = "fuel-balance-low-alarm-threshold";
+  const [lowFuelThreshold, setLowFuelThreshold] = useState(() => {
+    if (typeof window === "undefined") return 200;
+    try {
+      const saved = window.localStorage.getItem(LOW_FUEL_THRESHOLD_STORAGE_KEY);
+      const parsed = Number(saved);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : 200;
+    } catch {
+      return 200;
+    }
+  });
   const PMR_THRESHOLD_STORAGE_KEY = "pmr-category-thresholds";
   const [categoryThresholds, setCategoryThresholds] = useState(() => {
     if (typeof window === "undefined") return {};
@@ -592,6 +612,22 @@ useEffect(() => {
       if (!cancelled) {
         setFuelPerfError(err.message || "Could not load Fuel Data.");
         setFuelPerfLoading(false);
+      }
+    });
+
+  getMSAGMonthlyData()
+    .then((data) => {
+      if (!cancelled) {
+        console.log("✓ MSAG Monthly data loaded:", data?.length || 0, "records");
+        setMsagMonthlyData(Array.isArray(data) ? data : []);
+        setMsagLoading(false);
+      }
+    })
+    .catch((err) => {
+      console.error("✗ Failed to load MSAG Monthly data:", err);
+      if (!cancelled) {
+        setMsagError(err.message || "Could not load MSAG Monthly data.");
+        setMsagLoading(false);
       }
     });
 
@@ -1045,6 +1081,82 @@ useEffect(() => {
     setSelectedFuelSite("All");
   }, []);
 
+  const portableByMSAG = useMemo(() => {
+    const grouped = new Map();
+    (Array.isArray(msagMonthlyData) ? msagMonthlyData : []).forEach((row) => {
+      const key = normalizeSiteName(row.msagName || "");
+      if (!key) return;
+      if (!grouped.has(key)) {
+        grouped.set(key, { name: key, usageHours: 0, fuelConsumption: 0 });
+      }
+      const item = grouped.get(key);
+      item.usageHours += Number(row.usageHours || 0);
+      item.fuelConsumption += Number(row.fuelConsumption || 0);
+    });
+
+    return [...grouped.values()]
+      .map((item) => ({
+        ...item,
+        usageHours: round2(item.usageHours),
+        fuelConsumption: round2(item.fuelConsumption),
+      }))
+      .sort((a, b) => (b.usageHours - a.usageHours) || (b.fuelConsumption - a.fuelConsumption) || a.name.localeCompare(b.name));
+  }, [msagMonthlyData]);
+
+  const portableByGenerator = useMemo(() => {
+    const grouped = new Map();
+    (Array.isArray(msagMonthlyData) ? msagMonthlyData : []).forEach((row) => {
+      const key = String(row.generator || "Unknown").trim() || "Unknown";
+      if (!grouped.has(key)) {
+        grouped.set(key, { name: key, usageHours: 0, fuelConsumption: 0 });
+      }
+      const item = grouped.get(key);
+      item.usageHours += Number(row.usageHours || 0);
+      item.fuelConsumption += Number(row.fuelConsumption || 0);
+    });
+
+    return [...grouped.values()]
+      .map((item) => ({
+        ...item,
+        usageHours: round2(item.usageHours),
+        fuelConsumption: round2(item.fuelConsumption),
+      }))
+      .sort((a, b) => (b.usageHours - a.usageHours) || (b.fuelConsumption - a.fuelConsumption) || a.name.localeCompare(b.name));
+  }, [msagMonthlyData]);
+
+  const portableGeneratorKeys = useMemo(() => {
+    return portableByGenerator.map((item) => item.name);
+  }, [portableByGenerator]);
+
+  const portableGanttData = useMemo(() => {
+    const bySite = new Map();
+    (Array.isArray(msagMonthlyData) ? msagMonthlyData : []).forEach((row) => {
+      const site = normalizeSiteName(row.msagName || "");
+      const generator = String(row.generator || "Unknown").trim() || "Unknown";
+      if (!site) return;
+      if (!bySite.has(site)) {
+        bySite.set(site, { site, totalUsage: 0 });
+      }
+
+      const item = bySite.get(site);
+      const existing = Number(item[generator] || 0);
+      const hours = Number(row.usageHours || 0);
+      item[generator] = round2(existing + hours);
+      item.totalUsage = round2(Number(item.totalUsage || 0) + hours);
+    });
+
+    return [...bySite.values()].sort((a, b) => (b.totalUsage - a.totalUsage) || a.site.localeCompare(b.site));
+  }, [msagMonthlyData]);
+
+  const generatorColorMap = useMemo(() => {
+    const palette = ["#174EA6", "#C5221F", "#0B8043", "#B06000", "#7E57C2", "#00838F", "#5D4037", "#546E7A"];
+    const map = new Map();
+    portableGeneratorKeys.forEach((key, index) => {
+      map.set(key, palette[index % palette.length]);
+    });
+    return map;
+  }, [portableGeneratorKeys]);
+
   const pmrSiteNames = useMemo(() => {
     const entries = pmrData
       .map((item) => ({
@@ -1229,6 +1341,15 @@ useEffect(() => {
     }
   }, [categoryThresholds]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(LOW_FUEL_THRESHOLD_STORAGE_KEY, String(lowFuelThreshold));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [lowFuelThreshold]);
+
   const getThresholdValue = useCallback((category) => {
     const categoryKey = normalizeSiteName(category);
     return Number(categoryThresholds[categoryKey] ?? 90);
@@ -1268,6 +1389,18 @@ useEffect(() => {
   const selectedFuelConsumedTotal = useMemo(() => {
     return round2(selectedUsageData.reduce((sum, item) => sum + item.fuelConsumed, 0));
   }, [selectedUsageData]);
+
+  const fuelBalanceChartData = useMemo(() => {
+    if (!fuelBalanceDerived || !Array.isArray(fuelBalanceDerived.totals)) return [];
+    return fuelBalanceDerived.totals.map((item) => ({
+      ...item,
+      isLowFuel: Number(item.fuelBalance || 0) <= Number(lowFuelThreshold || 0),
+    }));
+  }, [fuelBalanceDerived, lowFuelThreshold]);
+
+  const lowFuelSitesCount = useMemo(() => {
+    return fuelBalanceChartData.filter((item) => item.isLowFuel).length;
+  }, [fuelBalanceChartData]);
 
   const selectedUsageLabel = selectedUsageDate
     ? new Date(`${selectedUsageDate}T00:00:00`).toLocaleDateString("en-PK", {
@@ -1354,6 +1487,7 @@ useEffect(() => {
     summary: { title: "Summary of DGs", desc: "", icon: LayoutDashboard },
     usage: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Activity },
     fuel: { title: "DG Usage and Fuel Balance", desc: "Daily run hours, estimated fuel consumed, and current fuel balance", icon: Fuel },
+    portable: { title: "Portable Generators", desc: "MSAG Monthly usage and fuel analysis", icon: Fuel },
     pmr: { title: "PMR Tracking", desc: "Live site names from the PMR Tracking Google Sheet", icon: ClipboardList },
     repair: { title: "DG Repair History", desc: "Log and track generator repairs, spares used, and status", icon: Wrench },
     sheets: { title: "Google Sheets", desc: "Open the live workbook directly", icon: Link2 },
@@ -1514,8 +1648,38 @@ useEffect(() => {
             {/* Fuel Balance chart — sourced from the "Fuel Balance" Google Sheet */}
             <Card
               title="Fuel Balance by site"
-              desc=""
+              desc={fuelBalanceChartData.length ? `${lowFuelSitesCount} low-fuel site${lowFuelSitesCount === 1 ? "" : "s"} at or below ${lowFuelThreshold} L` : ""}
               style={{ marginTop: 0, marginBottom: 0 }}
+              right={
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <span style={{ fontSize: 11.5, color: COLORS.textDim, fontWeight: 700 }}>Low fuel alarm</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="10"
+                    value={lowFuelThreshold}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setLowFuelThreshold(Number.isFinite(value) && value >= 0 ? value : 0);
+                    }}
+                    style={{
+                      width: 84,
+                      border: `1px solid ${COLORS.panelEdge}`,
+                      borderRadius: 8,
+                      padding: "6px 8px",
+                      fontSize: 12,
+                      color: COLORS.text,
+                      background: "#fff",
+                      fontFamily: "IBM Plex Mono",
+                    }}
+                  />
+                  <span style={{ fontSize: 11.5, color: COLORS.textDim, fontFamily: "IBM Plex Mono" }}>L</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 4 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 999, background: COLORS.red, display: "inline-block" }} />
+                    <span style={{ fontSize: 11.5, color: COLORS.textDim }}>Low</span>
+                  </div>
+                </div>
+              }
             >
               {fuelBalanceLoading ? (
                 <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
@@ -1526,13 +1690,17 @@ useEffect(() => {
                   {fuelBalanceError}
                 </div>
               ) : fuelBalanceDerived && fuelBalanceDerived.totals.length > 0 ? (
-                <ResponsiveContainer width="100%" height={Math.max(320, fuelBalanceDerived.totals.length * 30)}>
-                  <BarChart data={fuelBalanceDerived.totals} layout="vertical" margin={{ top: 8, right: 56, left: 10, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={Math.max(320, fuelBalanceChartData.length * 30)}>
+                  <BarChart data={fuelBalanceChartData} layout="vertical" margin={{ top: 8, right: 56, left: 10, bottom: 0 }}>
                     <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
                     <YAxis type="category" dataKey="name" width={280} interval={0} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
                     <Tooltip content={<CustomTooltip unit="L" />} />
-                    <Bar dataKey="fuelBalance" name="Fuel balance" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                    <ReferenceLine x={lowFuelThreshold} stroke={COLORS.red} strokeDasharray="5 4" />
+                    <Bar dataKey="fuelBalance" name="Fuel balance" radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                      {fuelBalanceChartData.map((entry) => (
+                        <Cell key={`fuel-balance-cell-${entry.name}`} fill={entry.isLowFuel ? COLORS.red : COLORS.blue} />
+                      ))}
                       <LabelList dataKey="fuelBalance" position="right" formatter={(value) => `${value}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
                     </Bar>
                   </BarChart>
@@ -1541,6 +1709,76 @@ useEffect(() => {
                 <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
                   No Fuel Balance sheet data found. The deployed Apps Script is currently returning Daily Meter Reading rows for this request.
                 </div>
+              )}
+            </Card>
+          </>
+        )}
+
+        {section === "portable" && (
+          <>
+            <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
+              <StatCard icon={ClipboardList} label="MSAG Rows" value={msagMonthlyData.length} tone="navy" />
+              <StatCard icon={Activity} label="Total Usage Hours" value={round2(portableByMSAG.reduce((sum, item) => sum + item.usageHours, 0)).toFixed(2)} sub="All MSAG" tone="red" />
+              <StatCard icon={Fuel} label="Fuel Consumption" value={round2(portableByMSAG.reduce((sum, item) => sum + item.fuelConsumption, 0)).toFixed(2)} sub="Litres" tone="blue" />
+              <StatCard icon={Fuel} label="Generators" value={portableByGenerator.length} tone="green" />
+            </div>
+
+            <Card title="MSAG-wise usage and fuel" desc="Highest to lowest by usage hours" style={{ marginBottom: 18 }}>
+              {msagLoading ? (
+                <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>Loading MSAG Monthly data...</div>
+              ) : msagError ? (
+                <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>{msagError}</div>
+              ) : portableByMSAG.length > 0 ? (
+                <ResponsiveContainer width="100%" height={Math.max(340, portableByMSAG.length * 26)}>
+                  <BarChart data={portableByMSAG} layout="vertical" margin={{ top: 8, right: 24, left: 10, bottom: 0 }}>
+                    <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
+                    <YAxis type="category" dataKey="name" width={320} tickFormatter={(value) => shortLabel(value, 42)} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} interval={0} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend verticalAlign="top" align="left" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "IBM Plex Sans" }} />
+                    <Bar dataKey="usageHours" name="Usage Hours" fill={COLORS.red} radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="fuelConsumption" name="Fuel Consumption (L)" fill={COLORS.blue} radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>No MSAG Monthly records found.</div>
+              )}
+            </Card>
+
+            <Card title="Generator-wise usage and fuel" desc="Highest to lowest by usage hours" style={{ marginBottom: 18 }}>
+              {portableByGenerator.length > 0 ? (
+                <ResponsiveContainer width="100%" height={Math.max(280, portableByGenerator.length * 34)}>
+                  <BarChart data={portableByGenerator} layout="vertical" margin={{ top: 8, right: 24, left: 10, bottom: 0 }}>
+                    <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
+                    <YAxis type="category" dataKey="name" width={200} tick={{ fill: COLORS.text, fontSize: 11, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} interval={0} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend verticalAlign="top" align="left" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "IBM Plex Sans" }} />
+                    <Bar dataKey="usageHours" name="Usage Hours" fill={COLORS.red} radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="fuelConsumption" name="Fuel Consumption (L)" fill={COLORS.blue} radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>No generator data found.</div>
+              )}
+            </Card>
+
+            <Card title="Site vs Generator (Gantt-style)" desc="Stacked usage hours of generators across sites" style={{ marginBottom: 0 }}>
+              {portableGanttData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={Math.max(320, portableGanttData.length * 28)}>
+                  <BarChart data={portableGanttData} layout="vertical" margin={{ top: 8, right: 24, left: 10, bottom: 0 }}>
+                    <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
+                    <YAxis type="category" dataKey="site" width={320} tickFormatter={(value) => shortLabel(value, 42)} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} interval={0} />
+                    <Tooltip content={<CustomTooltip unit="h" />} />
+                    <Legend verticalAlign="top" align="left" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "IBM Plex Sans" }} />
+                    {portableGeneratorKeys.map((generator) => (
+                      <Bar key={`gantt-${generator}`} dataKey={generator} name={generator} stackId="usage" fill={generatorColorMap.get(generator) || COLORS.blue} radius={[0, 2, 2, 0]} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>No site-generator usage data found.</div>
               )}
             </Card>
           </>
@@ -1711,7 +1949,7 @@ useEffect(() => {
               <div style={{ display: "grid", gap: 16 }}>
                 <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 14, background: "#ffffff", boxShadow: "0 6px 18px rgba(16,36,62,0.05)", padding: 12, display: "grid", gap: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.5, padding: "2px 2px 0" }}>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.6, padding: "2px 2px 0" }}>
                       Bahawalpur Rural
                     </div>
                     <div style={{ padding: "7px 8px", borderRadius: 10, background: "#fcfdff", border: `1px solid ${COLORS.panelEdge}`, display: "grid", gap: 6, minWidth: 240 }}>
@@ -1792,7 +2030,7 @@ useEffect(() => {
                   </div>
                 </div>
                 {pmrSiteNames.map((group) => {
-                  const isExpanded = expandedExecutives[group.executive] !== false;
+                  const isExpanded = expandedExecutives[group.executive] === true;
                   const executiveSummary = executiveSummaries.find((item) => item.executive === group.executive) || { done: 0, pending: 0, overdue: 0 };
                   const executiveCategorySummaries = executiveCategoryStatusSummaries.get(group.executive) || PMR_CATEGORY_BUCKETS.map((item) => ({ category: item.label, done: 0, pending: 0, overdue: 0 }));
                   return (
@@ -1815,7 +2053,7 @@ useEffect(() => {
                         >
                           <div>
                             <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.navy }}>
-                              {group.executive}
+                              {`Executive: ${group.executive}`}
                             </div>
                           </div>
                           <div style={{ fontSize: 16, color: COLORS.navy, fontWeight: 700 }}>

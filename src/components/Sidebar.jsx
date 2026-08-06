@@ -14,6 +14,7 @@ import ptclLogo from "../assets/ptcl-logo.png";
 const NAV_ITEMS = [
   { key: "summary", label: "Summary of DGs", icon: LayoutDashboard },
   { key: "usage", label: "DG Usage and Fuel Balance", icon: Activity },
+  { key: "portable", label: "Portable Generators", icon: Activity },
   { key: "pmr", label: "PMR Tracking", icon: ClipboardList },
   { key: "electricity", label: "Electricity Performance", icon: Zap },
   { key: "fuelperf", label: "Fuel Performance", icon: Droplets },
