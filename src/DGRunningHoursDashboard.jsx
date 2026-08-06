@@ -1,13 +1,13 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Legend,
-  ResponsiveContainer, ReferenceLine, Cell
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine
 } from "recharts";
 import { parseWorkbook } from "./services/excelParser";
 import {
-  Gauge, Fuel, AlertTriangle, Check,
-  Wrench, Activity, LayoutDashboard, Radio, ClipboardList, CalendarDays, Link2, ArrowUpRight, ArrowDownRight, RotateCcw
+  Gauge, Fuel,
+  Wrench, Activity, LayoutDashboard, ClipboardList, Link2
 } from "lucide-react";
  import Sidebar from "./components/Sidebar";
  import StatCard from "./components/StatCard";
@@ -19,6 +19,31 @@ import { COLORS } from "./styles/colors";
 import SiteSelect from "./components/SiteSelect";
 import NoReportState from "./components/NoReportState";
 import RepairHistorySection from "./components/RepairHistorySection";
+import SummarySection from "./components/SummarySection";
+import UsageSection from "./components/UsageSection";
+import PortableSection from "./components/PortableSection";
+import PmrSection from "./components/PmrSection";
+import ElectricitySection from "./components/ElectricitySection";
+import FuelPerformanceSection from "./components/FuelPerformanceSection";
+import {
+  toLocalDateKey,
+  normalizeSiteName,
+  PMR_CATEGORY_BUCKETS,
+  getPmrCategoryBucket,
+  siteMatchKey,
+  round2,
+  getDayOfMonth,
+  parsePortableDate,
+  getPortableSiteLabel,
+  getPmDateStatus,
+  findSiteConsumption,
+} from "./utils/dashboardUtils";
+import {
+  useFuelBalanceDerived,
+  useDerived,
+  useFuelDerived,
+  useSheetSummary,
+} from "./hooks/useDashboardDerived";
 import {
   storage,
   loadIndex,
@@ -28,519 +53,8 @@ import {
 } from "./services/storage";
 
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');`;
- 
- 
-function toLocalDateKey(value) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
-function siteAliasKey(value) {
-  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-const SITE_DISPLAY_NAME_ENTRIES = [
-  ["P12BNRBNRM008//MTR.BWN.HaroonabadRoad.MSAG.01", "Model town"],
-  ["P12BNRBNRM009//10.139.101.2-MT-BWN-Pull4-A-D", "Pull 4AD"],
-  ["P12BNRBNRM002//10.139.50.50-MT-BWP-CTN13Gjia-H-M", "13 Gajyani"],
-  ["P12BNRBNRM001//10.139.50.46-MT-BWN-HadCk73-H-M", "chak 73/4-R"],
-  ["P12BNRBNRM050//10.139.89.50-MT-BWN-SugMilRd-Z-M", "Sugar Mill Road"],
-  ["P12BNRBNRM051//10.139.89.46-MT-BWN-OffColny-Z-M", "Officers Colony"],
-  ["P12BNRBNRM054//10.139.71.186-MT-BWN-BhwaliChk-Z-M", "Bahawali Chowk"],
-  ["P12BNRBNRM056//10.139.71.190-MT-BWN-RamzaniaMsjd-Z-M", "Ramzania Masjid"],
-  ["P12BNRBNRM057//10.139.61.78-MT-BWN-GoshalaChk-Z-M", "Goshala Chowk"],
-  ["P12BNRBNRM058//10.139.62.78-MT-BWN-CityHousingScheme-Z-M", "City Housing Scheme"],
-  ["P12BWPHPRM050//10.139.36.14-MTR-BWP-VehariRdHasilpur-H-M", "Vehari Road, Hasilpur"],
-  ["P12BNRBNRM059//10.139.126.190-MT-BWN-DHQHosp-A-M", "DHQ Hospital"],
-  ["P12BNRBNRM063//10.139.36.42-MT-BWN-BaldiaChowk-H-M", "Baldia Chowk"],
-  ["P12BNRBNRM062//10.139.36.46-MT-BWN-CollegeRoad-H-M", "College Road"],
-  ["P12BNRBNRM061//10.139.36.50-MT-BWN-P12BNRBNRM061-H-M", "Gulshan-e-Iqbal Chishtian"],
-  ["P12BNRBNRM064//10.139.36.54-MT-BWN-JamiaMehmoodia-H-M", "Jamia Mehmoodia"],
-  ["P12BNRBNRM067//10.139.126.214-MT-BWN-RailwayChowk1-A-M", "Railway Chowk"],
-  ["P12BNRBNRM065//10.139.126.198-MT-BWN-MubarakGate-A-M", "Mubarak Gate"],
-  ["P12BWPHPRM051//10.139.36.18-MT-BWP-KhiljiDrinkHasilPur-H-M", "Khilji Drink, Hasilpur"],
-  ["P12BNRBNRM060//10.139.52.110-MT-BWN-FqrWali-Z-M", "Faqir Wali"],
-  ["P12BNRBNRM066//10.139.126.206-MT-BWN-Minchibad1-A-M", "Minchinabad"],
-  ["12BWNHPRMSAG003//10.139.150.10-MT-BWPChowkHasilpur-H-M", "BWP Chowk, Hasilpur"],
-  ["12BWNDWAMSAG001//10.139.150.6-MT-BWR-Dahranwala-H-M", "Thana mor Dahranwala"],
-  ["P12BNRBNRM014//10.139.150.14-MT-BWR-FortAbbas-H-M", "Fort Abbas"],
-  ["P12BWPHRPM055//10.139.155.14-MTR-BHAWALNAGAR-EXHHPUR-Z-M", "Zia Shaheed Hasilpur"],
-  ["10.139.155.18-MTR-GhallaMandi-DRN-Z-M", "Ghalla Mandi, Dahranwala"],
-  ["10 139 155.22-MTR-BWN-GovtSchl-Z-M", "Govt school"],
-  ["P12BNRBNRNM51//10.139.90.102-MT-BWN-Chk296-H-M", "Chak 296/H-R"],
-  ["P12BNRBNRNM51//10.139.90.102-MT-BWN-Chk296R-Z-M", "Chak 296/H-R"],
-
-];
-
-const SITE_DISPLAY_NAME_MAP = new Map();
-SITE_DISPLAY_NAME_ENTRIES.forEach(([original, display]) => {
-  const fullKey = siteAliasKey(original);
-  if (fullKey) {
-    SITE_DISPLAY_NAME_MAP.set(fullKey, display);
-  }
-
-  if (String(original).includes("//")) {
-    const tail = String(original).split("//").pop() || "";
-    const tailKey = siteAliasKey(tail);
-    if (tailKey) {
-      SITE_DISPLAY_NAME_MAP.set(tailKey, display);
-    }
-  }
-});
-
-function normalizeSiteName(name) {
-  const raw = String(name || "");
-  if (!raw) return "";
-
-  const directKey = siteAliasKey(raw);
-  if (SITE_DISPLAY_NAME_MAP.has(directKey)) {
-    return SITE_DISPLAY_NAME_MAP.get(directKey);
-  }
-
-  if (raw.includes("//")) {
-    const tail = raw.split("//").pop() || "";
-    const tailKey = siteAliasKey(tail);
-    if (SITE_DISPLAY_NAME_MAP.has(tailKey)) {
-      return SITE_DISPLAY_NAME_MAP.get(tailKey);
-    }
-  }
-
-  return raw;
-}
-
-const PMR_CATEGORY_BUCKETS = [
-  { key: "solar", label: "Solar Sites" },
-  { key: "exchange", label: "Exchange" },
-  { key: "msag", label: "MSAG" },
-];
-
-function getPmrCategoryBucket(category) {
-  const normalizedCategory = normalizeSiteName(category).toLowerCase();
-  if (normalizedCategory.includes("solar")) return "solar";
-  if (normalizedCategory.includes("msag")) return "msag";
-  if (normalizedCategory.includes("exchange")) return "exchange";
-  // Keep unexpected labels within the Exchange bucket so top cards remain fixed to 3 categories.
-  return "exchange";
-}
-
-function siteMatchKey(name) {
-  return normalizeSiteName(name).toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function round2(value) {
-  return Math.round(Number(value || 0) * 100) / 100;
-}
-
-function shortLabel(value, max = 46) {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  return text.length > max ? `${text.slice(0, max)}...` : text;
-}
-
-function getDayOfMonth(value) {
-  if (!value) return 0;
-  const date = new Date(value);
-  if (!Number.isNaN(date.getTime())) return date.getDate();
-
-  const text = String(value);
-  const ddMonYyyy = text.match(/^(\d{1,2})-[A-Za-z]{3}-\d{4}$/);
-  if (ddMonYyyy) {
-    const parsed = new Date(text);
-    if (!Number.isNaN(parsed.getTime())) return parsed.getDate();
-  }
-  return 0;
-}
-
-function parsePortableDate(value) {
-  if (!value) return null;
-
-  const asDate = value instanceof Date ? value : new Date(value);
-  if (!Number.isNaN(asDate.getTime())) return asDate;
-
-  const text = String(value || "").trim();
-  const ddMonYyyy = text.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
-  if (ddMonYyyy) {
-    const day = Number(ddMonYyyy[1]);
-    const mon = ddMonYyyy[2].toLowerCase();
-    const year = Number(ddMonYyyy[3]);
-    const monthMap = {
-      jan: 0,
-      feb: 1,
-      mar: 2,
-      apr: 3,
-      may: 4,
-      jun: 5,
-      jul: 6,
-      aug: 7,
-      sep: 8,
-      oct: 9,
-      nov: 10,
-      dec: 11,
-    };
-    if (Object.prototype.hasOwnProperty.call(monthMap, mon)) {
-      return new Date(year, monthMap[mon], day);
-    }
-  }
-
-  return null;
-}
-
-function getPortableSiteLabel(msagName, generatorNumber) {
-  const site = String(msagName || "").trim() || "Unknown";
-
-  const gen = Number(generatorNumber || 0);
-  const suffix = gen > 0 ? `#${gen}` : "#?";
-  return `${site} ${suffix}`;
-}
-
-function formatPmDate(value) {
-  if (!value) return "No date";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "No date";
-  return date.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function getPmDateStatus(pmDate, thresholdDays) {
-  const today = new Date();
-  const cutoffDate = new Date(today);
-  cutoffDate.setDate(today.getDate() - Number(thresholdDays || 0));
-  const normalizedCutoff = new Date(cutoffDate.getFullYear(), cutoffDate.getMonth(), cutoffDate.getDate());
-
-  if (!pmDate) {
-    return { bg: "#f9d8e2", text: COLORS.text, state: "pending" };
-  }
-
-  const parsedDate = new Date(pmDate);
-  if (Number.isNaN(parsedDate.getTime())) {
-    return { bg: "#f9d8e2", text: COLORS.text, state: "pending" };
-  }
-
-  const normalizedDate = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
-  if (normalizedDate < normalizedCutoff) {
-    return { bg: "#f8c7da", text: COLORS.text, state: "overdue" };
-  }
-  if (normalizedDate.getTime() === normalizedCutoff.getTime()) {
-    return { bg: "#ffffff", text: COLORS.text, state: "threshold" };
-  }
-  return { bg: "#dff6e8", text: COLORS.text, state: "healthy" };
-}
-
-function findSiteConsumption(fuelBalanceDerived, siteName) {
-  if (!fuelBalanceDerived) return 0;
-  const key = siteMatchKey(siteName);
-  if (!key) return 0;
-  return fuelBalanceDerived.consumptionBySite.get(key) || 0;
-}
-
-function useFuelBalanceDerived(fuelBalanceData, meterData) {
-  return useMemo(() => {
-    const latestMeterBySite = new Map();
-    (Array.isArray(meterData) ? meterData : []).forEach((item) => {
-      const name = normalizeSiteName(item.site || item.name || "");
-      const key = siteMatchKey(name);
-      if (!key) return;
-
-      const parsedDate = item.date ? new Date(item.date) : null;
-      if (!parsedDate || Number.isNaN(parsedDate.getTime())) return;
-
-      const hourMeter = Number(item.hourMeter ?? item.totalHourMeter ?? item["Total Hour Meter"] ?? 0) || 0;
-      const previous = latestMeterBySite.get(key);
-      if (!previous || parsedDate > previous.date) {
-        latestMeterBySite.set(key, { date: parsedDate, hourMeter });
-      }
-    });
-
-    const totals = (Array.isArray(fuelBalanceData) ? fuelBalanceData : [])
-      .map((item) => {
-        const name = normalizeSiteName(item.name || item.site || item.siteName || item["Site Name"] || item["Name of Exchange"] || "");
-        const openingBalance = Number(item.openingBalance ?? item["Opening Balance of this month"] ?? 0) || 0;
-        const cumulativeTopping = Number(item.cumulativeTopping ?? item["Cummulative topping in current month (if any)"] ?? item["Cumulative topping in current month (if any)"] ?? 0) || 0;
-        const startHourMeter = Number(item.startHourMeter ?? item["Reading of Hour Meter at start of this month"] ?? 0) || 0;
-        const perHourFuelConsumption = Number(item.perHourFuelConsumption ?? item.per_hour_fuel_consumption ?? item["Per Hour Fuel Consumption"] ?? 0) || 0;
-        const latestMeter = latestMeterBySite.get(siteMatchKey(name));
-        const latestHourMeter = latestMeter ? latestMeter.hourMeter : startHourMeter;
-        const consumedFuel = Math.max(0, latestHourMeter - startHourMeter) * perHourFuelConsumption;
-        const computedFuelBalance = round2((openingBalance + cumulativeTopping) - consumedFuel);
-
-        return {
-          name,
-          openingBalance,
-          cumulativeTopping,
-          startHourMeter,
-          latestHourMeter,
-          fuelBalance: computedFuelBalance,
-          perHourFuelConsumption,
-        };
-      })
-      .filter((site) => site.name)
-      .sort((a, b) => b.fuelBalance - a.fuelBalance);
-
-    const grandTotal = Math.round(totals.reduce((a, s) => a + s.fuelBalance, 0) * 100) / 100;
-    const consumptionBySite = new Map();
-    const consumptionSites = [];
-    totals.forEach((site) => {
-      const key = siteMatchKey(site.name);
-      if (key) {
-        consumptionBySite.set(key, site.perHourFuelConsumption);
-        consumptionSites.push({ key, name: site.name, perHourFuelConsumption: site.perHourFuelConsumption });
-      }
-    });
-
-    return {
-      totals,
-      grandTotal,
-      consumptionBySite,
-      consumptionSites,
-      siteCount: totals.length,
-      siteNames: totals.map((s) => s.name),
-    };
-  }, [fuelBalanceData, meterData]);
-}
-
-function useDerived(parsed) {
-  return useMemo(() => {
-    if (!parsed || !Array.isArray(parsed.days) || !Array.isArray(parsed.sites)) {
-      return null;
-    }
-
-    const daily = parsed.days.map((day, index) => {
-      const totalHours = round2(
-        parsed.sites.reduce((sum, site) => sum + (Number(site?.readings?.[index] ?? 0) || 0), 0)
-      );
-      return { day: `D${day}`, totalHours };
-    });
-
-    const totals = parsed.sites
-      .map((site) => ({
-        name: normalizeSiteName(site?.name || ""),
-        total: round2((site?.readings || []).reduce((sum, value) => sum + (Number(value ?? 0) || 0), 0)),
-      }))
-      .filter((site) => site.name)
-      .sort((a, b) => (b.total - a.total) || a.name.localeCompare(b.name));
-
-    return {
-      daily,
-      totals,
-      siteNames: totals.map((site) => site.name),
-    };
-  }, [parsed]);
-}
-
-function useFuelDerived(parsed) {
-  return useMemo(() => {
-    if (!parsed || !Array.isArray(parsed.days) || !Array.isArray(parsed.sites)) {
-      return null;
-    }
-
-    const daily = parsed.days.map((day, index) => {
-      const totalFuel = round2(
-        parsed.sites.reduce((sum, site) => sum + (Number(site?.fuel?.[index] ?? 0) || 0), 0)
-      );
-      return { day: `D${day}`, totalFuel };
-    });
-
-    const totals = parsed.sites
-      .map((site) => ({
-        name: normalizeSiteName(site?.name || ""),
-        total: round2((site?.fuel || []).reduce((sum, value) => sum + (Number(value ?? 0) || 0), 0)),
-      }))
-      .filter((site) => site.name && site.total > 0)
-      .sort((a, b) => (b.total - a.total) || a.name.localeCompare(b.name));
-
-    const monthTotal = round2(totals.reduce((sum, site) => sum + site.total, 0));
-
-    return {
-      daily,
-      totals,
-      monthTotal,
-      siteNames: totals.map((site) => site.name),
-    };
-  }, [parsed]);
-}
-
-function useSheetSummary(sheetData) {
-  return useMemo(() => {
-    const rows = Array.isArray(sheetData) ? sheetData : [];
-    if (rows.length === 0) return null;
-
-    const names = new Set();
-    let workingDGs = 0;
-
-    rows.forEach((row, index) => {
-      const siteName = normalizeSiteName(
-        row?.site ||
-        row?.name ||
-        row?.exchange ||
-        row?.["Exchange Name"] ||
-        row?.["Site Name"] ||
-        row?.["Exchange location"] ||
-        `site-${index}`
-      );
-
-      if (siteName) names.add(siteName);
-
-      const statusRaw = String(
-        row?.status ||
-        row?.dgStatus ||
-        row?.["DG Status"] ||
-        row?.working ||
-        ""
-      ).trim().toLowerCase();
-
-      const isWorking = statusRaw
-        ? (statusRaw.includes("working") || statusRaw === "ok" || statusRaw === "yes" || statusRaw === "true" || statusRaw === "1")
-        : Number(row?.dailyHours || row?.runHours || row?.["Run Hours"] || 0) > 0;
-
-      if (isWorking) workingDGs += 1;
-    });
-
-    const totalSites = names.size || rows.length;
-    const faultyDGCount = Math.max(0, totalSites - workingDGs);
-
-    return {
-      totalSites,
-      workingDGs,
-      faultyDGCount,
-    };
-  }, [sheetData]);
-}
- 
 // --- Persistence (works inside claude.ai AND on a deployed Netlify site) --
-
- 
-// --- Shared UI pieces --------------------------------------------------
- 
-
- 
-
- 
-
-
- 
-// Empty state shown on Usage / Fuel / Summary when no report is loaded yet.
-
- 
-// --- Sidebar -------------------------------------------------------------
- 
-function _Logo() {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 6px", marginBottom: 26 }}>
-      <div style={{
-        width: 34, height: 34, borderRadius: 7, background: COLORS.red,
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-      }}>
-        <Radio size={18} color="#fff" />
-      </div>
-      <div>
-        <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: 15, color: "#fff", letterSpacing: 0.4 }}>PTCL</div>
-        <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 10, color: COLORS.onNavyDim, letterSpacing: 0.3, marginTop: -1 }}>DG Operations · BWN</div>
-      </div>
-    </div>
-  );
-}
- 
-
-// --- Summary section -------------------------------------------------------
- 
-function SummarySection({ 
-  parsed, 
-  derived, 
-  sheetSummary,
-  meterDerived,
-  fuelBalanceDerived
-}) {
-  const topSites = derived ? derived.totals.slice(0, 5) : [];
- 
-  return (
-    <>
-<div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
-
-  <StatCard 
-    icon={Gauge} 
-    label="Total DGs" 
-    value={sheetSummary ? sheetSummary.totalSites : "—"} 
-    tone="navy" 
-  />
-
-  <StatCard 
-    icon={Activity} 
-    label="Latest Daily Run Hours" 
-    value={meterDerived ? meterDerived.latestDailyHours.toFixed(2) : "—"} 
-    sub={meterDerived?.latestDate ? meterDerived.latestDate.toLocaleDateString("en-PK") : "Daily operation"}
-    tone="red" 
-  />
-
-  <StatCard 
-    icon={Activity} 
-    label="Total Run Hours This Month" 
-    value={meterDerived ? meterDerived.monthlyHours.toFixed(2) : "—"} 
-    sub="Monthly total"
-    tone="blue" 
-  />
-
-  <StatCard 
-    icon={Fuel} 
-    label="Total Fuel Available" 
-    value={fuelBalanceDerived ? fuelBalanceDerived.grandTotal.toFixed(2) : "—"} 
-    sub="All DGs (Litres)"
-    tone="green" 
-  />
-
-  <StatCard 
-    icon={Check} 
-    label="DG Sets Working" 
-    value={sheetSummary ? sheetSummary.workingDGs : "—"} 
-    tone="green" 
-  />
-
-  <StatCard 
-    icon={AlertTriangle} 
-    label="DG Sets Faulty" 
-    value={sheetSummary ? sheetSummary.faultyDGCount : "—"} 
-    tone="red" 
-  />
-
-</div>
- 
-      {parsed && (
-        <div className="dashboard-chart-grid">
-          <Card title="Fleet-wide daily running hours" desc={`${parsed.monthLabel} — sum of all reporting sites`}>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={derived.daily} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
-                <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="day" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                <YAxis tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={false} tickLine={false} width={40} />
-                <Tooltip content={<CustomTooltip unit="hrs" />} />
-                <ReferenceLine y={0} stroke={COLORS.panelEdge} />
-                <Line type="monotone" dataKey="totalHours" name="Total hrs" stroke={COLORS.red} strokeWidth={2.2} dot={{ r: 3, fill: COLORS.red, strokeWidth: 0 }} connectNulls>
-                  <LabelList dataKey="totalHours" position="top" formatter={(value) => value ?? ""} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                </Line>
-              </LineChart>
-            </ResponsiveContainer>
-          </Card>
- 
-          <Card title="Top 5 sites by run hours" desc={parsed.monthLabel}>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={topSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
-                <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={200} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip unit="hrs" />} />
-                <Bar dataKey="total" name="Total hrs" fill={COLORS.navy} radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                  <LabelList dataKey="total" position="right" formatter={(value) => `${value}h`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-        </div>
-      )}
-    </>
-  );
-}
  
 // --- Upload Files section ---------------------------------------------------
  
@@ -1774,276 +1288,35 @@ useEffect(() => {
         )}
  
         {section === "usage" && (
-          <>
-            <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
-              <StatCard icon={Gauge} label="Sites reporting" value={meterDerived ? meterDerived.siteCount : "—"} tone="navy" />
-              <StatCard icon={Activity} label="Selected date run hours" value={selectedUsageTotal.toFixed(2)} sub={selectedUsageLabel || "No date selected"} tone="red" />
-              <StatCard icon={Fuel} label="Estimated fuel consumed" value={selectedFuelConsumedTotal.toFixed(2)} sub="Litres" tone="blue" />
-              <StatCard icon={ClipboardList} label="DGs used on selected date" value={selectedUsageData.length} sub="" tone="green" />
-              <StatCard icon={CalendarDays} label="Data available for days" value={usageDateOptions.length} tone="blue" />
-            </div>
-
-            <Card
-              title="DG usage by site"
-              desc=""
-              style={{ marginBottom: 18 }}
-              right={
-                <select
-                  value={selectedUsageDate}
-                  onChange={(event) => setSelectedUsageDate(event.target.value)}
-                  style={{
-                    border: `1px solid ${COLORS.panelEdge}`,
-                    borderRadius: 8,
-                    padding: "8px 11px",
-                    fontFamily: "'IBM Plex Mono', monospace",
-                    fontSize: 12,
-                    color: COLORS.text,
-                    background: COLORS.panelSoft,
-                    minWidth: 150,
-                    boxShadow: "0 1px 0 rgba(16,36,62,0.03)",
-                  }}
-                >
-                  {usageDateOptions.map((date) => (
-                    <option key={date} value={date}>
-                      {new Date(`${date}T00:00:00`).toLocaleDateString("en-PK", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </option>
-                  ))}
-                </select>
-              }
-            >
-              {usageDateOptions.length === 0 ? (
-                <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                  Meter reading data is loading.
-                </div>
-              ) : selectedUsageData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={selectedUsageData} barCategoryGap={8} margin={{ top: 8, right: 20, left: 0, bottom: 42 }}>
-                    <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" interval={0} tickFormatter={(value) => (String(value).length > 14 ? `${String(value).slice(0, 14)}...` : String(value))} height={42} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                    <YAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={false} tickLine={false} width={44} />
-                    <Legend verticalAlign="top" align="left" iconType="circle" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "'IBM Plex Sans', sans-serif" }} />
-                    <Tooltip content={<CustomTooltip tip="Sorted from highest usage to lowest for the selected date" />} />
-                    <Bar dataKey="hours" name="Run hours" fill={COLORS.red} radius={[4, 4, 0, 0]} isAnimationActive={false} barSize={16}>
-                      <LabelList dataKey="hours" position="top" formatter={(value) => `${value}h`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    </Bar>
-                    <Bar dataKey="perHourFuelConsumption" name="Fuel consumption" fill={COLORS.amber} radius={[4, 4, 0, 0]} isAnimationActive={false} barSize={16}>
-                      <LabelList dataKey="perHourFuelConsumption" position="top" formatter={(value) => `${value}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    </Bar>
-                    <Bar dataKey="fuelConsumed" name="Fuel consumed" fill={COLORS.blue} radius={[4, 4, 0, 0]} isAnimationActive={false} barSize={16}>
-                      <LabelList dataKey="fuelConsumed" position="top" formatter={(value) => `${value}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                  No DG usage above zero for this date.
-                </div>
-              )}
-            </Card>
-
-            {/* Fuel Balance chart — sourced from the "Fuel Balance" Google Sheet */}
-            <Card
-              title="Fuel Balance by site"
-              desc={fuelBalanceChartData.length ? `${lowFuelSitesCount} low-fuel site${lowFuelSitesCount === 1 ? "" : "s"} at or below ${lowFuelThreshold} L` : ""}
-              style={{ marginTop: 0, marginBottom: 0 }}
-              right={
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <span style={{ fontSize: 11.5, color: COLORS.textDim, fontWeight: 700 }}>Low fuel alarm</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="10"
-                    value={lowFuelThreshold}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      setLowFuelThreshold(Number.isFinite(value) && value >= 0 ? value : 0);
-                    }}
-                    style={{
-                      width: 84,
-                      border: `1px solid ${COLORS.panelEdge}`,
-                      borderRadius: 8,
-                      padding: "6px 8px",
-                      fontSize: 12,
-                      color: COLORS.text,
-                      background: "#fff",
-                      fontFamily: "IBM Plex Mono",
-                    }}
-                  />
-                  <span style={{ fontSize: 11.5, color: COLORS.textDim, fontFamily: "IBM Plex Mono" }}>L</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 4 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 999, background: COLORS.red, display: "inline-block" }} />
-                    <span style={{ fontSize: 11.5, color: COLORS.textDim }}>Low</span>
-                  </div>
-                </div>
-              }
-            >
-              {fuelBalanceLoading ? (
-                <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                  Fuel balance data is loading from the Google Sheet.
-                </div>
-              ) : fuelBalanceError ? (
-                <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                  {fuelBalanceError}
-                </div>
-              ) : fuelBalanceDerived && fuelBalanceDerived.totals.length > 0 ? (
-                <ResponsiveContainer width="100%" height={Math.max(320, fuelBalanceChartData.length * 30)}>
-                  <BarChart data={fuelBalanceChartData} layout="vertical" margin={{ top: 8, right: 56, left: 10, bottom: 0 }}>
-                    <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                    <YAxis type="category" dataKey="name" width={280} interval={0} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip unit="L" />} />
-                    <ReferenceLine x={lowFuelThreshold} stroke={COLORS.red} strokeDasharray="5 4" />
-                    <Bar dataKey="fuelBalance" name="Fuel balance" radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                      {fuelBalanceChartData.map((entry) => (
-                        <Cell key={`fuel-balance-cell-${entry.name}`} fill={entry.isLowFuel ? COLORS.red : COLORS.blue} />
-                      ))}
-                      <LabelList dataKey="fuelBalance" position="right" formatter={(value) => `${value}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                  No Fuel Balance sheet data found. The deployed Apps Script is currently returning Daily Meter Reading rows for this request.
-                </div>
-              )}
-            </Card>
-          </>
+          <UsageSection
+            meterDerived={meterDerived}
+            selectedUsageTotal={selectedUsageTotal}
+            selectedUsageLabel={selectedUsageLabel}
+            selectedFuelConsumedTotal={selectedFuelConsumedTotal}
+            selectedUsageData={selectedUsageData}
+            usageDateOptions={usageDateOptions}
+            selectedUsageDate={selectedUsageDate}
+            setSelectedUsageDate={setSelectedUsageDate}
+            fuelBalanceChartData={fuelBalanceChartData}
+            lowFuelSitesCount={lowFuelSitesCount}
+            lowFuelThreshold={lowFuelThreshold}
+            setLowFuelThreshold={setLowFuelThreshold}
+            fuelBalanceLoading={fuelBalanceLoading}
+            fuelBalanceError={fuelBalanceError}
+            fuelBalanceDerived={fuelBalanceDerived}
+          />
         )}
 
         {section === "portable" && (
-          <>
-            <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
-              <StatCard
-                icon={ClipboardList}
-                label="PG Sites / Deployments"
-                value={portableSummary.siteCount}
-                sub={`${portableSummary.deploymentCount} deployments | ${portableSummary.monthLabel}`}
-                tone="navy"
-              />
-              <StatCard icon={Activity} label="Total Fuel Consumed" value={portableSummary.fuelConsumed.toFixed(2)} sub="Litres" tone="blue" />
-            </div>
-
-            <Card title="MSAG-wise usage and fuel" desc="Highest to lowest by usage hours" style={{ marginBottom: 18 }}>
-              {msagLoading ? (
-                <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>Loading MSAG Monthly data...</div>
-              ) : msagError ? (
-                <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>{msagError}</div>
-              ) : portableByMSAG.length > 0 ? (
-                <ResponsiveContainer width="100%" height={Math.max(340, portableByMSAG.length * 26)}>
-                  <BarChart data={portableByMSAG} layout="vertical" margin={{ top: 8, right: 24, left: 10, bottom: 0 }}>
-                    <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                    <YAxis type="category" dataKey="name" width={320} tickFormatter={(value) => shortLabel(value, 42)} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} interval={0} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend verticalAlign="top" align="left" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "IBM Plex Sans" }} />
-                    <Bar dataKey="usageHours" name="Usage Hours" fill={COLORS.red} radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                      <LabelList dataKey="usageHours" position="right" formatter={(value) => `${round2(value)}h`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    </Bar>
-                    <Bar dataKey="fuelConsumption" name="Fuel Consumption (L)" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                      <LabelList dataKey="fuelConsumption" position="right" formatter={(value) => `${round2(value)}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>No MSAG Monthly records found.</div>
-              )}
-            </Card>
-
-            <Card title="Generator-wise usage and fuel" desc="Highest to lowest by usage hours" style={{ marginBottom: 18 }}>
-              {portableByGenerator.length > 0 ? (
-                <ResponsiveContainer width="100%" height={Math.max(280, portableByGenerator.length * 34)}>
-                  <BarChart data={portableByGenerator} layout="vertical" margin={{ top: 8, right: 24, left: 10, bottom: 0 }}>
-                    <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                    <YAxis type="category" dataKey="name" width={200} tick={{ fill: COLORS.text, fontSize: 11, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} interval={0} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend verticalAlign="top" align="left" wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontFamily: "IBM Plex Sans" }} />
-                    <Bar dataKey="usageHours" name="Usage Hours" fill={COLORS.red} radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                      <LabelList dataKey="usageHours" position="right" formatter={(value) => `${round2(value)}h`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    </Bar>
-                    <Bar dataKey="fuelConsumption" name="Fuel Consumption (L)" fill={COLORS.blue} radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                      <LabelList dataKey="fuelConsumption" position="right" formatter={(value) => `${round2(value)}L`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>No generator data found.</div>
-              )}
-            </Card>
-
-            <Card title="Site vs Generator (Gantt-style)" desc="Runs mapped on day-of-month timeline" style={{ marginBottom: 0 }}>
-              {portableTimelineRows.length > 0 ? (
-                <div
-                  style={{
-                    borderRadius: 12,
-                    background: COLORS.panel,
-                    border: `1px solid ${COLORS.panelEdge}`,
-                    padding: "12px 14px",
-                    overflowX: "auto",
-                  }}
-                >
-                  <div style={{ minWidth: 720 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", alignItems: "center", marginBottom: 8 }}>
-                      <div />
-                      <div style={{ position: "relative", height: 20 }}>
-                        {[1, 10, 20, 31].map((day) => (
-                          <span
-                            key={`day-label-${day}`}
-                            style={{
-                              position: "absolute",
-                              left: `${((day - 1) / 30) * 100}%`,
-                              transform: "translateX(-50%)",
-                              top: 0,
-                              color: COLORS.textDim,
-                              fontSize: 11,
-                              fontFamily: "IBM Plex Mono",
-                            }}
-                          >
-                            {day}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gap: 0 }}>
-                      {portableTimelineRows.map((row) => (
-                        <div key={`timeline-${row.site}-${row.generator}`} style={{ display: "grid", gridTemplateColumns: "150px 1fr", alignItems: "center", minHeight: 50 }}>
-                          <div style={{ color: COLORS.text, fontSize: 12.5, fontWeight: 600, paddingRight: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={row.label}>
-                            {row.label}
-                          </div>
-                          <div style={{ position: "relative", height: 48, borderTop: `1px solid ${COLORS.panelEdge}`, borderBottom: `1px solid ${COLORS.panelEdge}` }}>
-                            {row.points.map((point, index) => (
-                              <span
-                                key={`marker-${row.site}-${row.generator}-${point.day}-${index}`}
-                                title={`${row.label} | Day ${point.day} | Usage ${point.usageHours}h | Fuel ${point.fuelConsumption}L`}
-                                style={{
-                                  position: "absolute",
-                                  left: `${((point.day - 1) / 30) * 100}%`,
-                                  top: "50%",
-                                  transform: "translate(-50%, -50%)",
-                                  width: point.widthPx,
-                                  height: 14,
-                                  borderRadius: 2,
-                                  background: generatorColorMap.get(row.generator) || COLORS.blue,
-                                  boxShadow: "0 0 0 1px rgba(16,36,62,0.08) inset",
-                                }}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ padding: "28px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>No site-generator usage data found.</div>
-              )}
-            </Card>
-          </>
+          <PortableSection
+            portableSummary={portableSummary}
+            msagLoading={msagLoading}
+            msagError={msagError}
+            portableByMSAG={portableByMSAG}
+            portableByGenerator={portableByGenerator}
+            portableTimelineRows={portableTimelineRows}
+            generatorColorMap={generatorColorMap}
+          />
         )}
 
         {section === "__legacy_usage" && (
@@ -2194,584 +1467,72 @@ useEffect(() => {
         )}
  
         {section === "pmr" && (
-          <Card
-            title="PMR tracking sites"
-            desc="PMR sites grouped by executive and category"
-            style={{ marginBottom: 0, background: "linear-gradient(135deg, #f9fbff 0%, #f3f7ff 100%)" }}
-          >
-            {pmrLoading ? (
-              <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                Loading PMR tracking data from Google Sheets...
-              </div>
-            ) : pmrError ? (
-              <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                {pmrError}
-              </div>
-            ) : pmrSiteNames.length > 0 ? (
-              <div style={{ display: "grid", gap: 16 }}>
-                <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 14, background: "#ffffff", boxShadow: "0 6px 18px rgba(16,36,62,0.05)", padding: 12, display: "grid", gap: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.6, padding: "2px 2px 0" }}>
-                      Bahawalpur Rural
-                    </div>
-                    <div style={{ padding: "7px 8px", borderRadius: 10, background: "#fcfdff", border: `1px solid ${COLORS.panelEdge}`, display: "grid", gap: 6, minWidth: 240 }}>
-                      <div style={{ fontSize: 10.5, fontWeight: 800, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                        Thresholds (Days)
-                      </div>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {thresholdCategories.map((item) => (
-                          <label key={`threshold-${item.category}`} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: COLORS.textDim, padding: "4px 6px", borderRadius: 8, border: `1px solid ${COLORS.panelEdge}`, background: "#ffffff" }}>
-                            <span style={{ fontWeight: 700, color: COLORS.navy }}>{item.category}</span>
-                            <input
-                              type="number"
-                              min="0"
-                              max="90"
-                              step="1"
-                              value={item.value}
-                              onChange={(event) => updateThresholdValue(item.category, event.target.value)}
-                              style={{ width: 44, border: `1px solid ${COLORS.panelEdge}`, borderRadius: 6, padding: "3px 5px", fontSize: 10.5, color: COLORS.text, background: "#ffffff" }}
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
-                    {[
-                      { key: "done", label: "Done", total: pmrSummary.done, titleColor: "#0f5132", cardBg: "#f3fbf6", edge: "#bee7cd", cellBg: "#e8f7ee" },
-                      { key: "pending", label: "Pending", total: pmrSummary.pending, titleColor: "#8a1c3a", cardBg: "#fff5f8", edge: "#f0bfd0", cellBg: "#ffeaf0" },
-                      { key: "overdue", label: "Overdue", total: pmrSummary.overdue, titleColor: "#7a3e00", cardBg: "#fff8ef", edge: "#f0d1a8", cellBg: "#fff0db" },
-                      { key: "totalSites", label: "Total Sites", total: pmrSummary.done + pmrSummary.pending + pmrSummary.overdue, titleColor: "#143f75", cardBg: "#f2f7ff", edge: "#b9d3f4", cellBg: "#e8f1ff" },
-                    ].map((statusCard) => (
-                      <div
-                        key={statusCard.key}
-                        style={{
-                          padding: "10px 12px",
-                          borderRadius: 12,
-                          background: statusCard.cardBg,
-                          border: `1px solid ${statusCard.edge}`,
-                          boxShadow: "0 4px 12px rgba(16,36,62,0.05)",
-                          display: "grid",
-                          gap: 8,
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                          <div style={{ fontSize: 11, fontWeight: 800, color: statusCard.titleColor, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                            {statusCard.label}
-                          </div>
-                          <div style={{ fontSize: 22, fontWeight: 900, color: statusCard.titleColor, lineHeight: 1 }}>
-                            {statusCard.total}
-                          </div>
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
-                          {categoryStatusSummaries.map((item) => (
-                            <div
-                              key={`${statusCard.key}-${item.category}`}
-                              style={{
-                                background: statusCard.cellBg,
-                                border: `1px solid ${statusCard.edge}`,
-                                borderRadius: 8,
-                                padding: "6px 7px",
-                                display: "grid",
-                                gap: 3,
-                              }}
-                            >
-                              <div style={{ fontSize: 9.5, fontWeight: 700, color: statusCard.titleColor, textTransform: "uppercase", letterSpacing: 0.2 }}>
-                                {item.category}
-                              </div>
-                              <div style={{ fontSize: 14, fontWeight: 900, color: statusCard.titleColor, lineHeight: 1 }}>
-                                {statusCard.key === "totalSites"
-                                  ? item.done + item.pending + item.overdue
-                                  : item[statusCard.key]}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {pmrSiteNames.map((group) => {
-                  const isExpanded = expandedExecutives[group.executive] === true;
-                  const executiveSummary = executiveSummaries.find((item) => item.executive === group.executive) || { done: 0, pending: 0, overdue: 0 };
-                  const executiveCategorySummaries = executiveCategoryStatusSummaries.get(group.executive) || PMR_CATEGORY_BUCKETS.map((item) => ({ category: item.label, done: 0, pending: 0, overdue: 0 }));
-                  return (
-                    <div key={group.executive} style={{ display: "grid", gap: 10 }}>
-                      <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 12, background: "#ffffff", boxShadow: "0 6px 18px rgba(16,36,62,0.06)", padding: 10, display: "grid", gap: 10 }}>
-                        <button
-                          type="button"
-                          onClick={() => toggleExecutive(group.executive)}
-                          style={{
-                            padding: "4px 4px 2px",
-                            borderRadius: 8,
-                            background: "transparent",
-                            border: "none",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            cursor: "pointer",
-                            textAlign: "left",
-                          }}
-                        >
-                          <div>
-                            <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.navy }}>
-                              {`Executive: ${group.executive}`}
-                            </div>
-                          </div>
-                          <div style={{ fontSize: 16, color: COLORS.navy, fontWeight: 700 }}>
-                            {isExpanded ? "▾" : "▸"}
-                          </div>
-                        </button>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
-                          {[
-                            { key: "done", label: "Done", total: executiveSummary.done, titleColor: "#0f5132", cardBg: "#f3fbf6", edge: "#bee7cd", cellBg: "#e8f7ee" },
-                            { key: "pending", label: "Pending", total: executiveSummary.pending, titleColor: "#8a1c3a", cardBg: "#fff5f8", edge: "#f0bfd0", cellBg: "#ffeaf0" },
-                            { key: "overdue", label: "Overdue", total: executiveSummary.overdue, titleColor: "#7a3e00", cardBg: "#fff8ef", edge: "#f0d1a8", cellBg: "#fff0db" },
-                            { key: "totalSites", label: "Total Sites", total: executiveSummary.done + executiveSummary.pending + executiveSummary.overdue, titleColor: "#143f75", cardBg: "#f2f7ff", edge: "#b9d3f4", cellBg: "#e8f1ff" },
-                          ].map((statusCard) => (
-                            <div
-                              key={`${group.executive}-${statusCard.key}`}
-                              style={{
-                                padding: "10px 12px",
-                                borderRadius: 12,
-                                background: statusCard.cardBg,
-                                border: `1px solid ${statusCard.edge}`,
-                                boxShadow: "0 4px 12px rgba(16,36,62,0.05)",
-                                display: "grid",
-                                gap: 8,
-                              }}
-                            >
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                                <div style={{ fontSize: 11, fontWeight: 800, color: statusCard.titleColor, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                                  {statusCard.label}
-                                </div>
-                                <div style={{ fontSize: 22, fontWeight: 900, color: statusCard.titleColor, lineHeight: 1 }}>
-                                  {statusCard.total}
-                                </div>
-                              </div>
-                              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
-                                {executiveCategorySummaries.map((item) => (
-                                  <div
-                                    key={`${group.executive}-${statusCard.key}-${item.category}`}
-                                    style={{
-                                      background: statusCard.cellBg,
-                                      border: `1px solid ${statusCard.edge}`,
-                                      borderRadius: 8,
-                                      padding: "6px 7px",
-                                      display: "grid",
-                                      gap: 3,
-                                    }}
-                                  >
-                                    <div style={{ fontSize: 9.5, fontWeight: 700, color: statusCard.titleColor, textTransform: "uppercase", letterSpacing: 0.2 }}>
-                                      {item.category}
-                                    </div>
-                                    <div style={{ fontSize: 14, fontWeight: 900, color: statusCard.titleColor, lineHeight: 1 }}>
-                                      {statusCard.key === "totalSites"
-                                        ? item.done + item.pending + item.overdue
-                                        : item[statusCard.key]}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      {isExpanded && (
-                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                          {group.categories.map((categoryGroup) => {
-                        const thresholdValue = getThresholdValue(categoryGroup.category);
-                        const pendingCount = categoryGroup.sites.filter((entry) => !entry.pmDate).length;
-                        const overdueCount = categoryGroup.sites.filter((entry) => {
-                          const status = getPmDateStatus(entry.pmDate, thresholdValue);
-                          return status.state === "overdue" || status.state === "pending";
-                        }).length;
-                        return (
-                          <div key={categoryGroup.category} style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 250, flex: 1, padding: "12px", borderRadius: 14, background: "#ffffff", border: `1px solid ${COLORS.panelEdge}`, boxShadow: "0 4px 14px rgba(16,36,62,0.05)" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <div style={{ fontSize: 12.5, fontWeight: 800, color: COLORS.navy, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                                {categoryGroup.category} ({categoryGroup.sites.length})
-                              </div>
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "6px 0 2px", borderBottom: `1px solid ${COLORS.panelEdge}` }}>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: "#b23a5a" }}>Pending: {pendingCount}</span>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.navy }}>Overdue: {overdueCount}</span>
-                            </div>
-                            <div style={{ display: "grid", gap: 8, marginTop: 2 }}>
-                              {categoryGroup.sites.map((entry) => {
-                                const statusStyle = getPmDateStatus(entry.pmDate, thresholdValue);
-                                return (
-                                  <div
-                                    key={entry.name}
-                                    style={{
-                                      padding: "10px 12px",
-                                      borderRadius: 10,
-                                      border: `1px solid ${COLORS.panelEdge}`,
-                                      background: statusStyle.bg,
-                                      color: COLORS.text,
-                                      fontWeight: 700,
-                                      display: "flex",
-                                      justifyContent: "space-between",
-                                      gap: 10,
-                                      alignItems: "center",
-                                      boxShadow: "0 2px 8px rgba(16,36,62,0.03)",
-                                    }}
-                                  >
-                                    <span style={{ fontSize: 13 }}>{entry.name}</span>
-                                    <span style={{ color: COLORS.textDim, fontSize: 11.5, fontWeight: 600 }}>
-                                      {formatPmDate(entry.pmDate)}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div style={{ padding: "34px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                No PMR site names were returned from the Google Sheet.
-              </div>
-            )}
-          </Card>
+          <PmrSection
+            pmrLoading={pmrLoading}
+            pmrError={pmrError}
+            pmrSiteNames={pmrSiteNames}
+            thresholdCategories={thresholdCategories}
+            updateThresholdValue={updateThresholdValue}
+            pmrSummary={pmrSummary}
+            categoryStatusSummaries={categoryStatusSummaries}
+            expandedExecutives={expandedExecutives}
+            executiveSummaries={executiveSummaries}
+            executiveCategoryStatusSummaries={executiveCategoryStatusSummaries}
+            toggleExecutive={toggleExecutive}
+            getThresholdValue={getThresholdValue}
+          />
         )}
 
         {section === "electricity" && (
-          <>
-            <div className="electricity-layout">
-              <div>
-                <div className="electricity-topbar">
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    {selectedCpSite !== "All" && (
-                      <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, background: "rgba(255,255,255,0.88)", padding: "6px 10px", fontSize: 11.5, color: COLORS.blue, fontWeight: 700, boxShadow: COLORS.shadowSoft }}>
-                        Site: {selectedCpSite}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="electricity-shell" style={{ marginTop: 8 }}>
-                  <div style={{ display: "grid", gap: 10, minWidth: 0, marginTop: -2 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
-                      <StatCard icon={Activity} label="Units 2025" value={Math.round(electricitySummary.units2025).toLocaleString("en-US")} tone="navy" compact />
-                      <StatCard icon={Gauge} label="Units 2026" value={Math.round(electricitySummary.units2026).toLocaleString("en-US")} tone="blue" compact />
-                      <StatCard
-                        icon={electricitySummary.unitsDelta >= 0 ? ArrowDownRight : ArrowUpRight}
-                        label="Inc/Dec Units"
-                        value={`${electricitySummary.unitsDelta >= 0 ? "↓" : "↑"} ${Math.round(electricitySummary.unitsDelta).toLocaleString("en-US")}`}
-                        sub={electricitySummary.unitsDelta >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
-                        tone={electricitySummary.unitsDelta >= 0 ? "green" : "red"}
-                        valueColor={electricitySummary.unitsDelta >= 0 ? COLORS.green : COLORS.red}
-                        compact
-                      />
-                      <StatCard
-                        icon={electricitySummary.unitsDeltaPercent === null ? Activity : electricitySummary.unitsDeltaPercent >= 0 ? ArrowDownRight : ArrowUpRight}
-                        label="Inc/Dec %"
-                        value={electricitySummary.unitsDeltaPercent === null
-                          ? "—"
-                          : `${electricitySummary.unitsDeltaPercent >= 0 ? "↓" : "↑"} ${round2(electricitySummary.unitsDeltaPercent).toFixed(2)}%`}
-                        sub={electricitySummary.unitsDeltaPercent === null ? "No 2025 baseline" : electricitySummary.unitsDeltaPercent >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
-                        tone={electricitySummary.unitsDeltaPercent === null
-                          ? "navy"
-                          : electricitySummary.unitsDeltaPercent >= 0
-                            ? "green"
-                            : "red"}
-                        valueColor={electricitySummary.unitsDeltaPercent === null
-                          ? COLORS.text
-                          : electricitySummary.unitsDeltaPercent >= 0
-                            ? COLORS.green
-                            : COLORS.red}
-                        compact
-                      />
-                    </div>
-                  </div>
-
-                  <aside className="electricity-panel" style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 14, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.96) 100%)", padding: 8, boxShadow: "0 6px 14px rgba(16,36,62,0.05)", display: "grid", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, overflowX: "auto", whiteSpace: "nowrap", scrollbarWidth: "thin" }}>
-                          {siteTypeCounts.length > 0 ? siteTypeCounts.map((item) => (
-                            <div key={`site-type-inline-${item.siteType}`} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, padding: "2px 8px", background: COLORS.panelSoft, display: "inline-flex", alignItems: "center", gap: 5 }}>
-                              <span style={{ fontSize: 10.5, fontWeight: 800, color: COLORS.navy }}>{item.siteType}</span>
-                              <span style={{ fontSize: 10.5, fontWeight: 900, color: COLORS.blue, fontFamily: "IBM Plex Mono" }}>{item.count}</span>
-                            </div>
-                          )) : (
-                            <span style={{ fontSize: 10.5, color: COLORS.textDim }}>No site types</span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 11.5, fontWeight: 900, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45, whiteSpace: "nowrap" }}>
-                          Filters
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={resetElectricityFilters}
-                        title="Reset all filters"
-                        aria-label="Reset all filters"
-                        style={{
-                          width: 28,
-                          height: 28,
-                          borderRadius: 8,
-                          border: `1px solid ${COLORS.blueSoft}`,
-                          background: "linear-gradient(180deg, #eff5ff 0%, #e2ecfb 100%)",
-                          color: COLORS.navy,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: "pointer",
-                          boxShadow: COLORS.shadowSoft,
-                          padding: 0,
-                        }}
-                      >
-                        <RotateCcw size={14} />
-                      </button>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 140px))", justifyContent: "start", gap: 6 }}>
-                      {[
-                        { label: "Manager", value: selectedCpManager, onChange: setSelectedCpManager, options: cpManagerOptions },
-                        { label: "Executive", value: selectedCpExecutive, onChange: setSelectedCpExecutive, options: cpExecutiveOptions },
-                        { label: "Month", value: selectedCpMonth, onChange: setSelectedCpMonth, options: cpMonthOptions },
-                        { label: "Site Type", value: selectedCpSiteType, onChange: setSelectedCpSiteType, options: cpSiteTypeOptions },
-                        { label: "Site", value: selectedCpSite, onChange: setSelectedCpSite, options: cpSiteOptions },
-                      ].map((filter) => (
-                        <label key={filter.label} style={{ display: "grid", gap: 3, fontSize: 10.5, color: COLORS.textDim }}>
-                          <span style={{ fontWeight: 700, color: COLORS.navy, lineHeight: 1 }}>{filter.label}</span>
-                          <select
-                            value={filter.value}
-                            onChange={(event) => filter.onChange(event.target.value)}
-                            style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "1px 8px", minHeight: 24, fontSize: 11.5, color: COLORS.text, background: "#ffffff", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)" }}
-                          >
-                            {filter.options.map((option) => (
-                              <option key={`${filter.label.toLowerCase()}-${option}`} value={option}>{option}</option>
-                            ))}
-                          </select>
-                        </label>
-                      ))}
-                    </div>
-
-                  </aside>
-                </div>
-              </div>
-
-              <div className="electricity-chart-grid">
-                <Card title="Top 10 Sites - Increased Units (Bad)" desc="Month-paired comparison (2025 - 2026): negatives show increases">
-                  {topIncreasedSites.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={Math.max(260, topIncreasedSites.length * 26)}>
-                      <BarChart data={topIncreasedSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
-                        <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                        <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                        <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
-                        <ReferenceLine x={0} stroke={COLORS.panelEdge} />
-                        <Tooltip content={<CustomTooltip unit="units" />} />
-                        <Bar dataKey="units" name="Increase (Bad)" fill={COLORS.red} radius={[0, 4, 4, 0]}>
-                          <LabelList dataKey="units" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div style={{ padding: "24px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                      No site increases found for current filters.
-                    </div>
-                  )}
-                </Card>
-
-                <Card title="Top 10 Sites - Decreased Units (Good)" desc="Month-paired comparison (2025 - 2026): positives show decreases">
-                  {topDecreasedSites.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={Math.max(260, topDecreasedSites.length * 26)}>
-                      <BarChart data={topDecreasedSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
-                        <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                        <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                        <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
-                        <ReferenceLine x={0} stroke={COLORS.panelEdge} />
-                        <Tooltip content={<CustomTooltip unit="units" />} />
-                        <Bar dataKey="units" name="Decrease (Good)" fill={COLORS.green} radius={[0, 4, 4, 0]}>
-                          <LabelList dataKey="units" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div style={{ padding: "24px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                      No site decreases found for current filters.
-                    </div>
-                  )}
-                </Card>
-              </div>
-
-            </div>
-          </>
+          <ElectricitySection
+            selectedCpSite={selectedCpSite}
+            electricitySummary={electricitySummary}
+            siteTypeCounts={siteTypeCounts}
+            resetElectricityFilters={resetElectricityFilters}
+            selectedCpManager={selectedCpManager}
+            setSelectedCpManager={setSelectedCpManager}
+            cpManagerOptions={cpManagerOptions}
+            selectedCpExecutive={selectedCpExecutive}
+            setSelectedCpExecutive={setSelectedCpExecutive}
+            cpExecutiveOptions={cpExecutiveOptions}
+            selectedCpMonth={selectedCpMonth}
+            setSelectedCpMonth={setSelectedCpMonth}
+            cpMonthOptions={cpMonthOptions}
+            selectedCpSiteType={selectedCpSiteType}
+            setSelectedCpSiteType={setSelectedCpSiteType}
+            cpSiteTypeOptions={cpSiteTypeOptions}
+            selectedCpSiteValue={selectedCpSite}
+            setSelectedCpSite={setSelectedCpSite}
+            cpSiteOptions={cpSiteOptions}
+            topIncreasedSites={topIncreasedSites}
+            topDecreasedSites={topDecreasedSites}
+          />
         )}
 
         {section === "fuelperf" && (
-          <>
-            <div className="electricity-layout">
-              <div>
-                <div className="electricity-topbar">
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    {selectedFuelSite !== "All" && (
-                      <div style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, background: "rgba(255,255,255,0.88)", padding: "6px 10px", fontSize: 11.5, color: COLORS.blue, fontWeight: 700, boxShadow: COLORS.shadowSoft }}>
-                        Site: {selectedFuelSite}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="electricity-shell" style={{ marginTop: 8 }}>
-                  <div style={{ display: "grid", gap: 10, minWidth: 0, marginTop: -2 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
-                      <StatCard icon={Fuel} label="Fuel 2025" value={Math.round(fuelSummary.fuel2025).toLocaleString("en-US")} tone="navy" compact />
-                      <StatCard icon={Fuel} label="Fuel 2026" value={Math.round(fuelSummary.fuel2026).toLocaleString("en-US")} tone="blue" compact />
-                      <StatCard
-                        icon={fuelSummary.fuelDelta >= 0 ? ArrowDownRight : ArrowUpRight}
-                        label="Inc/Dec Fuel"
-                        value={`${fuelSummary.fuelDelta >= 0 ? "↓" : "↑"} ${Math.round(fuelSummary.fuelDelta).toLocaleString("en-US")}`}
-                        sub={fuelSummary.fuelDelta >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
-                        tone={fuelSummary.fuelDelta >= 0 ? "green" : "red"}
-                        valueColor={fuelSummary.fuelDelta >= 0 ? COLORS.green : COLORS.red}
-                        compact
-                      />
-                      <StatCard
-                        icon={fuelSummary.fuelDeltaPercent === null ? Activity : fuelSummary.fuelDeltaPercent >= 0 ? ArrowDownRight : ArrowUpRight}
-                        label="Inc/Dec %"
-                        value={fuelSummary.fuelDeltaPercent === null
-                          ? "—"
-                          : `${fuelSummary.fuelDeltaPercent >= 0 ? "↓" : "↑"} ${round2(fuelSummary.fuelDeltaPercent).toFixed(2)}%`}
-                        sub={fuelSummary.fuelDeltaPercent === null ? "No 2025 baseline" : fuelSummary.fuelDeltaPercent >= 0 ? "Decrease (Good)" : "Increase (Bad)"}
-                        tone={fuelSummary.fuelDeltaPercent === null
-                          ? "navy"
-                          : fuelSummary.fuelDeltaPercent >= 0
-                            ? "green"
-                            : "red"}
-                        valueColor={fuelSummary.fuelDeltaPercent === null
-                          ? COLORS.text
-                          : fuelSummary.fuelDeltaPercent >= 0
-                            ? COLORS.green
-                            : COLORS.red}
-                        compact
-                      />
-                    </div>
-                  </div>
-
-                  <aside className="electricity-panel" style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 14, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.96) 100%)", padding: 8, boxShadow: "0 6px 14px rgba(16,36,62,0.05)", display: "grid", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, overflowX: "auto", whiteSpace: "nowrap", scrollbarWidth: "thin" }}>
-                          {fuelSiteTypeCounts.length > 0 ? fuelSiteTypeCounts.map((item) => (
-                            <div key={`fuel-site-type-inline-${item.siteType}`} style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 999, padding: "2px 8px", background: COLORS.panelSoft, display: "inline-flex", alignItems: "center", gap: 5 }}>
-                              <span style={{ fontSize: 10.5, fontWeight: 800, color: COLORS.navy }}>{item.siteType}</span>
-                              <span style={{ fontSize: 10.5, fontWeight: 900, color: COLORS.blue, fontFamily: "IBM Plex Mono" }}>{item.count}</span>
-                            </div>
-                          )) : (
-                            <span style={{ fontSize: 10.5, color: COLORS.textDim }}>No site types</span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 11.5, fontWeight: 900, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.45, whiteSpace: "nowrap" }}>
-                          Filters
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={resetFuelFilters}
-                        title="Reset all filters"
-                        aria-label="Reset all filters"
-                        style={{
-                          width: 28,
-                          height: 28,
-                          borderRadius: 8,
-                          border: `1px solid ${COLORS.blueSoft}`,
-                          background: "linear-gradient(180deg, #eff5ff 0%, #e2ecfb 100%)",
-                          color: COLORS.navy,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: "pointer",
-                          boxShadow: COLORS.shadowSoft,
-                          padding: 0,
-                        }}
-                      >
-                        <RotateCcw size={14} />
-                      </button>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 140px))", justifyContent: "start", gap: 6 }}>
-                      {[
-                        { label: "Manager", value: selectedFuelManager, onChange: setSelectedFuelManager, options: fuelManagerOptions },
-                        { label: "Executive", value: selectedFuelExecutive, onChange: setSelectedFuelExecutive, options: fuelExecutiveOptions },
-                        { label: "Month", value: selectedFuelMonth, onChange: setSelectedFuelMonth, options: fuelMonthOptions },
-                        { label: "Site Type", value: selectedFuelSiteType, onChange: setSelectedFuelSiteType, options: fuelSiteTypeOptions },
-                        { label: "Site", value: selectedFuelSite, onChange: setSelectedFuelSite, options: fuelSiteOptions },
-                      ].map((filter) => (
-                        <label key={filter.label} style={{ display: "grid", gap: 3, fontSize: 10.5, color: COLORS.textDim }}>
-                          <span style={{ fontWeight: 700, color: COLORS.navy, lineHeight: 1 }}>{filter.label}</span>
-                          <select
-                            value={filter.value}
-                            onChange={(event) => filter.onChange(event.target.value)}
-                            style={{ border: `1px solid ${COLORS.panelEdge}`, borderRadius: 8, padding: "1px 8px", minHeight: 24, fontSize: 11.5, color: COLORS.text, background: "#ffffff", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)" }}
-                          >
-                            {filter.options.map((option) => (
-                              <option key={`${filter.label.toLowerCase()}-${option}`} value={option}>{option}</option>
-                            ))}
-                          </select>
-                        </label>
-                      ))}
-                    </div>
-
-                  </aside>
-                </div>
-              </div>
-
-              <div className="electricity-chart-grid">
-                <Card title="Top 10 Sites - Increased Fuel (Bad)" desc="Month-paired comparison (2025 - 2026): negatives show increases">
-                  {topIncreasedFuelSites.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={Math.max(260, topIncreasedFuelSites.length * 26)}>
-                      <BarChart data={topIncreasedFuelSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
-                        <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                        <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                        <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
-                        <ReferenceLine x={0} stroke={COLORS.panelEdge} />
-                        <Tooltip content={<CustomTooltip unit="L" />} />
-                        <Bar dataKey="fuel" name="Increase (Bad)" fill={COLORS.red} radius={[0, 4, 4, 0]}>
-                          <LabelList dataKey="fuel" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div style={{ padding: "24px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                      No site fuel increases found for current filters.
-                    </div>
-                  )}
-                </Card>
-
-                <Card title="Top 10 Sites - Decreased Fuel (Good)" desc="Month-paired comparison (2025 - 2026): positives show decreases">
-                  {topDecreasedFuelSites.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={Math.max(260, topDecreasedFuelSites.length * 26)}>
-                      <BarChart data={topDecreasedFuelSites} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
-                        <CartesianGrid stroke={COLORS.panelEdge} strokeDasharray="3 3" horizontal={false} />
-                        <XAxis type="number" tick={{ fill: COLORS.textDim, fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={{ stroke: COLORS.panelEdge }} tickLine={false} />
-                        <YAxis type="category" dataKey="name" width={180} tick={{ fill: COLORS.text, fontSize: 10.5, fontFamily: "IBM Plex Sans" }} axisLine={false} tickLine={false} />
-                        <ReferenceLine x={0} stroke={COLORS.panelEdge} />
-                        <Tooltip content={<CustomTooltip unit="L" />} />
-                        <Bar dataKey="fuel" name="Decrease (Good)" fill={COLORS.green} radius={[0, 4, 4, 0]}>
-                          <LabelList dataKey="fuel" position="right" formatter={(value) => `${value}`} style={{ fill: COLORS.text, fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div style={{ padding: "24px 0", textAlign: "center", color: COLORS.textDim, fontSize: 12.5 }}>
-                      No site fuel decreases found for current filters.
-                    </div>
-                  )}
-                </Card>
-              </div>
-
-            </div>
-          </>
+          <FuelPerformanceSection
+            selectedFuelSite={selectedFuelSite}
+            fuelSummary={fuelSummary}
+            fuelSiteTypeCounts={fuelSiteTypeCounts}
+            resetFuelFilters={resetFuelFilters}
+            selectedFuelManager={selectedFuelManager}
+            setSelectedFuelManager={setSelectedFuelManager}
+            fuelManagerOptions={fuelManagerOptions}
+            selectedFuelExecutive={selectedFuelExecutive}
+            setSelectedFuelExecutive={setSelectedFuelExecutive}
+            fuelExecutiveOptions={fuelExecutiveOptions}
+            selectedFuelMonth={selectedFuelMonth}
+            setSelectedFuelMonth={setSelectedFuelMonth}
+            fuelMonthOptions={fuelMonthOptions}
+            selectedFuelSiteType={selectedFuelSiteType}
+            setSelectedFuelSiteType={setSelectedFuelSiteType}
+            fuelSiteTypeOptions={fuelSiteTypeOptions}
+            selectedFuelSiteValue={selectedFuelSite}
+            setSelectedFuelSite={setSelectedFuelSite}
+            fuelSiteOptions={fuelSiteOptions}
+            topIncreasedFuelSites={topIncreasedFuelSites}
+            topDecreasedFuelSites={topDecreasedFuelSites}
+          />
         )}
 
         {section === "repair" && (
@@ -2820,3 +1581,4 @@ useEffect(() => {
     </div>
   );
 }
+
